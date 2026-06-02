@@ -87,6 +87,8 @@ CREATE TABLE IF NOT EXISTS artist_profiles (
   public_video_url TEXT,
   embed_video_url TEXT,
   hero_image_url TEXT,
+  portrait_image_url TEXT,
+  hero_source TEXT NOT NULL DEFAULT 'artwork' CHECK (hero_source IN ('artwork','portrait')),
   artwork_json TEXT NOT NULL DEFAULT '[]',
   status TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active','hidden','archived')),
   created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,

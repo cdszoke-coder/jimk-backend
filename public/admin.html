@@ -545,6 +545,30 @@
         </div>
 
         <div class="divider"></div>
+        <h3>Artist portrait (face/photo of the artist)</h3>
+        <p class="note">Optional. Upload a portrait of the artist. You can choose whether to use it as the hero image at the top of the artist page. The portrait will NOT appear in the public art gallery.</p>
+        <div class="row" style="margin-top:10px;align-items:flex-end;gap:14px;flex-wrap:wrap">
+          <div id="artistPortraitPreview" style="width:120px;height:120px;border-radius:60px;background:#1a0d2f;border:1px solid rgba(255,255,255,.1);display:flex;align-items:center;justify-content:center;color:rgba(255,255,255,.4);font-size:12px;flex-shrink:0">No portrait</div>
+          <div class="field" style="flex:1 1 220px;min-width:200px">
+            <label>Upload artist portrait (JPG, PNG, WebP, HEIC — up to 25MB)</label>
+            <input id="artistPortraitFile" type="file" accept="image/*,.heic,.heif" />
+          </div>
+          <div class="field" style="width:auto">
+            <label class="checkbox-row"><input id="artistPortraitSetHero" type="checkbox" /> Use as hero image</label>
+          </div>
+          <div class="field" style="width:140px">
+            <label>&nbsp;</label>
+            <button class="btn primary" id="uploadPortraitBtn">Upload portrait</button>
+          </div>
+        </div>
+        <div class="row" style="margin-top:10px;gap:8px;flex-wrap:wrap">
+          <button class="btn sm ghost" id="portraitUseAsHeroBtn">Use portrait as hero</button>
+          <button class="btn sm ghost" id="portraitUseArtworkAsHeroBtn">Use artwork as hero instead</button>
+          <button class="btn sm bad" id="portraitRemoveBtn">Remove portrait</button>
+        </div>
+        <p class="note" id="artistHeroSourceLabel" style="margin-top:10px">Hero source: not set yet</p>
+
+        <div class="divider"></div>
         <h3>Artwork (auto-scaled for the site)</h3>
         <p class="note">Upload original art here. Images are auto-resized to fit (max 1600px) and saved as WebP so the site stays fast. The first image becomes the hero image unless you change it.</p>
         <div class="row" style="margin-top:10px;align-items:flex-end">

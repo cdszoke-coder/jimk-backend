@@ -33,7 +33,15 @@
     artworkSetHero: document.getElementById('artistArtworkSetHero'),
     uploadBtn: document.getElementById('uploadArtworkBtn'),
     gallery: document.getElementById('artistArtworkGallery'),
-    qrUrl: document.getElementById('artistQrUrl')
+    qrUrl: document.getElementById('artistQrUrl'),
+    portraitPreview: document.getElementById('artistPortraitPreview'),
+    portraitFile: document.getElementById('artistPortraitFile'),
+    portraitSetHero: document.getElementById('artistPortraitSetHero'),
+    uploadPortraitBtn: document.getElementById('uploadPortraitBtn'),
+    portraitUseAsHeroBtn: document.getElementById('portraitUseAsHeroBtn'),
+    portraitUseArtworkAsHeroBtn: document.getElementById('portraitUseArtworkAsHeroBtn'),
+    portraitRemoveBtn: document.getElementById('portraitRemoveBtn'),
+    heroSourceLabel: document.getElementById('artistHeroSourceLabel')
   };
 
   if (!el.list) return;
@@ -144,6 +152,7 @@
     } else {
       setHint('Save the artist to generate their QR URL.');
     }
+    renderPortrait();
     renderGallery();
   }
 
@@ -152,6 +161,27 @@
     fillForm(null);
     el.gallery.innerHTML = '<div class="empty" style="grid-column:1/-1">Save a new artist first, then upload artwork.</div>';
     renderList();
+  }
+
+  function renderPortrait() {
+    const artist = state.selected;
+    if (!artist) {
+      el.portraitPreview.style.backgroundImage = '';
+      el.portraitPreview.innerHTML = 'No portrait';
+      el.heroSourceLabel.textContent = 'Hero source: not set yet';
+      return;
+    }
+    if (artist.portrait_image_url) {
+      el.portraitPreview.style.backgroundImage = `url('${absoluteAsset(artist.portrait_image_url)}')`;
+      el.portraitPreview.style.backgroundSize = 'cover';
+      el.portraitPreview.style.backgroundPosition = 'center';
+      el.portraitPreview.innerHTML = '';
+    } else {
+      el.portraitPreview.style.backgroundImage = '';
+      el.portraitPreview.innerHTML = 'No portrait';
+    }
+    const source = artist.hero_source === 'portrait' ? 'artist portrait' : 'artwork';
+    el.heroSourceLabel.textContent = `Hero source: ${source}`;
   }
 
   function collectPayload() {
@@ -215,6 +245,56 @@
     }
   }
 
+  async function uploadPortrait() {
+    try {
+      if (!state.selected) throw new Error('Save the artist first, then upload a portrait');
+      const file = el.portraitFile.files && el.portraitFile.files[0];
+      if (!file) throw new Error('Select a portrait image file');
+      const form = new FormData();
+      form.append('image', file);
+      if (el.portraitSetHero.checked) form.append('set_as_hero', 'true');
+      const data = await api(`/api/admin/artists/${state.selected.id}/portrait`, { method: 'POST', body: form });
+      state.selected = data.artist;
+      el.portraitFile.value = '';
+      el.portraitSetHero.checked = false;
+      fillForm(data.artist);
+      await reloadArtists();
+      setHint('Portrait uploaded.');
+    } catch (error) {
+      setHint(error.message, false);
+    }
+  }
+
+  async function portraitUseAs(useAs) {
+    try {
+      if (!state.selected) return;
+      const data = await api(`/api/admin/artists/${state.selected.id}/portrait/use-as-hero`, {
+        method: 'POST',
+        body: JSON.stringify({ use_as: useAs })
+      });
+      state.selected = data.artist;
+      fillForm(data.artist);
+      await reloadArtists();
+      setHint(useAs === 'portrait' ? 'Portrait is now the hero image.' : 'Artwork is now the hero image.');
+    } catch (error) {
+      setHint(error.message, false);
+    }
+  }
+
+  async function removePortrait() {
+    try {
+      if (!state.selected) return;
+      if (!window.confirm('Remove this portrait?')) return;
+      const data = await api(`/api/admin/artists/${state.selected.id}/portrait`, { method: 'DELETE' });
+      state.selected = data.artist;
+      fillForm(data.artist);
+      await reloadArtists();
+      setHint('Portrait removed.');
+    } catch (error) {
+      setHint(error.message, false);
+    }
+  }
+
   async function uploadArtwork() {
     try {
       if (!state.selected) throw new Error('Save the artist first, then upload artwork');
@@ -273,6 +353,10 @@
   el.saveBtn.addEventListener('click', saveArtist);
   el.clearBtn.addEventListener('click', clearForm);
   el.uploadBtn.addEventListener('click', uploadArtwork);
+  if (el.uploadPortraitBtn) el.uploadPortraitBtn.addEventListener('click', uploadPortrait);
+  if (el.portraitUseAsHeroBtn) el.portraitUseAsHeroBtn.addEventListener('click', () => portraitUseAs('portrait'));
+  if (el.portraitUseArtworkAsHeroBtn) el.portraitUseArtworkAsHeroBtn.addEventListener('click', () => portraitUseAs('artwork'));
+  if (el.portraitRemoveBtn) el.portraitRemoveBtn.addEventListener('click', removePortrait);
   el.statusFilter.addEventListener('change', () => {
     state.filters.status = el.statusFilter.value;
     reloadArtists();

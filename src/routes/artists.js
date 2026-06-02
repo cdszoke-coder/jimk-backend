@@ -203,7 +203,66 @@ adminRouter.post('/artists/:id/hero', (req, res) => {
     const db = getDb();
     const heroUrl = String((req.body && req.body.hero_image_url) || '').trim();
     if (!heroUrl) return badRequest(res, 'hero_image_url is required');
-    const updated = updateArtist(db, req.params.id, { hero_image_url: heroUrl });
+    const updated = updateArtist(db, req.params.id, {
+      hero_image_url: heroUrl,
+      hero_source: 'artwork'
+    });
+    return ok(res, { artist: updated });
+  } catch (error) {
+    return badRequest(res, error.message);
+  }
+});
+
+adminRouter.post('/artists/:id/portrait', upload.single('image'), async (req, res) => {
+  try {
+    const db = getDb();
+    const artist = getArtistById(db, req.params.id);
+    if (!artist) return notFound(res, 'Artist not found');
+    if (!req.file) return badRequest(res, 'No image file received');
+    const portraitUrl = await processAndSaveImage(req.file, artist.slug, {
+      max_width: req.body.max_width || 1200,
+      max_height: req.body.max_height || 1200
+    });
+    const setAsHero = String(req.body.set_as_hero || '').toLowerCase() === 'true';
+    const updated = updateArtist(db, req.params.id, {
+      portrait_image_url: portraitUrl,
+      hero_source: setAsHero ? 'portrait' : artist.hero_source
+    });
+    return res.status(201).json({ artist: updated, portrait_image_url: portraitUrl });
+  } catch (error) {
+    return badRequest(res, error.message);
+  }
+});
+
+adminRouter.post('/artists/:id/portrait/use-as-hero', (req, res) => {
+  try {
+    const db = getDb();
+    const artist = getArtistById(db, req.params.id);
+    if (!artist) return notFound(res, 'Artist not found');
+    if (!artist.portrait_image_url) return badRequest(res, 'No portrait uploaded yet');
+    const useAs = String((req.body && req.body.use_as) || 'portrait').toLowerCase() === 'artwork' ? 'artwork' : 'portrait';
+    const updated = updateArtist(db, req.params.id, { hero_source: useAs });
+    return ok(res, { artist: updated });
+  } catch (error) {
+    return badRequest(res, error.message);
+  }
+});
+
+adminRouter.delete('/artists/:id/portrait', (req, res) => {
+  try {
+    const db = getDb();
+    const artist = getArtistById(db, req.params.id);
+    if (!artist) return notFound(res, 'Artist not found');
+    const removeUrl = artist.portrait_image_url;
+    const updated = updateArtist(db, req.params.id, {
+      portrait_image_url: '',
+      hero_source: artist.hero_source === 'portrait' ? 'artwork' : artist.hero_source
+    });
+    if (removeUrl && removeUrl.startsWith('/uploads/artists/')) {
+      const relative = removeUrl.replace(/^\/uploads\//, '');
+      const absolute = path.join(uploadsRoot, relative);
+      fs.promises.unlink(absolute).catch(() => {});
+    }
     return ok(res, { artist: updated });
   } catch (error) {
     return badRequest(res, error.message);

@@ -67,6 +67,11 @@ function serializeArtist(row, options = {}) {
   const siteBaseUrl = options.site_base_url || '';
   const artworkUrls = parseArtworkJson(row.artwork_json);
   const qrTarget = `${String(options.artist_page_path || '/artist.html')}${row.slug ? `?artist=${encodeURIComponent(row.slug)}` : ''}`;
+  const portraitImageUrl = row.portrait_image_url || '';
+  const heroSource = row.hero_source === 'portrait' ? 'portrait' : 'artwork';
+  const effectiveHero = heroSource === 'portrait'
+    ? (portraitImageUrl || row.hero_image_url || artworkUrls[0] || '')
+    : (row.hero_image_url || artworkUrls[0] || portraitImageUrl || '');
   return {
     id: row.id,
     slug: row.slug,
@@ -80,6 +85,9 @@ function serializeArtist(row, options = {}) {
     public_video_url: row.public_video_url || '',
     embed_video_url: row.embed_video_url || '',
     hero_image_url: row.hero_image_url || '',
+    portrait_image_url: portraitImageUrl,
+    hero_source: heroSource,
+    effective_hero_url: effectiveHero,
     artwork_urls: artworkUrls,
     artwork_count: artworkUrls.length,
     status: row.status,
@@ -87,7 +95,8 @@ function serializeArtist(row, options = {}) {
     qr_url: siteBaseUrl ? `${String(siteBaseUrl).replace(/\/$/, '')}${qrTarget}` : qrTarget,
     created_at: row.created_at,
     updated_at: row.updated_at,
-    hero_image_absolute_url: createAbsoluteAssetUrl(row.hero_image_url, siteBaseUrl),
+    hero_image_absolute_url: createAbsoluteAssetUrl(effectiveHero, siteBaseUrl),
+    portrait_image_absolute_url: createAbsoluteAssetUrl(portraitImageUrl, siteBaseUrl),
     artwork_absolute_urls: artworkUrls.map(url => createAbsoluteAssetUrl(url, siteBaseUrl))
   };
 }
@@ -179,11 +188,14 @@ function createArtist(db, payload = {}) {
   const embedVideoUrl = String(payload.embed_video_url || '').trim() || toEmbedUrl(publicVideoUrl);
   const artworkJson = stringifyArtworkJson(payload.artwork_urls || []);
   const heroImageUrl = String(payload.hero_image_url || '').trim() || parseArtworkJson(artworkJson)[0] || '';
+  const portraitImageUrl = String(payload.portrait_image_url || '').trim() || '';
+  const heroSource = payload.hero_source === 'portrait' ? 'portrait' : 'artwork';
   const result = db.prepare(`
     INSERT INTO artist_profiles (
       slug, display_name, location, medium, joined_label, short_quote, bio,
-      testimony_summary, public_video_url, embed_video_url, hero_image_url, artwork_json, status
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      testimony_summary, public_video_url, embed_video_url, hero_image_url,
+      portrait_image_url, hero_source, artwork_json, status
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `).run(
     slug,
     payload.display_name,
@@ -196,6 +208,8 @@ function createArtist(db, payload = {}) {
     publicVideoUrl || null,
     embedVideoUrl || null,
     heroImageUrl || null,
+    portraitImageUrl || null,
+    heroSource,
     artworkJson,
     payload.status || 'active'
   );
@@ -220,6 +234,12 @@ function updateArtist(db, artistId, payload = {}) {
   const heroImageUrl = payload.hero_image_url !== undefined
     ? String(payload.hero_image_url || '').trim()
     : (existing.hero_image_url || nextArtworkUrls[0] || '');
+  const portraitImageUrl = payload.portrait_image_url !== undefined
+    ? String(payload.portrait_image_url || '').trim()
+    : (existing.portrait_image_url || '');
+  const heroSource = payload.hero_source !== undefined
+    ? (payload.hero_source === 'portrait' ? 'portrait' : 'artwork')
+    : (existing.hero_source === 'portrait' ? 'portrait' : 'artwork');
   db.prepare(`
     UPDATE artist_profiles SET
       slug = ?,
@@ -233,6 +253,8 @@ function updateArtist(db, artistId, payload = {}) {
       public_video_url = ?,
       embed_video_url = ?,
       hero_image_url = ?,
+      portrait_image_url = ?,
+      hero_source = ?,
       artwork_json = ?,
       status = ?,
       updated_at = CURRENT_TIMESTAMP
@@ -249,6 +271,8 @@ function updateArtist(db, artistId, payload = {}) {
     publicVideoUrl || null,
     embedVideoUrl || null,
     heroImageUrl || null,
+    portraitImageUrl || null,
+    heroSource,
     stringifyArtworkJson(nextArtworkUrls),
     payload.status ?? existing.status,
     Number(artistId)

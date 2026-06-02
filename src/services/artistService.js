@@ -278,8 +278,8 @@ function getPublicArtistsDirectory(db) {
   };
 }
 
-function ensureArtistUploadDir(basePublicDir) {
-  const uploadDir = path.join(basePublicDir, 'uploads', 'artists');
+function ensureArtistUploadDir(baseUploadsDir) {
+  const uploadDir = path.join(baseUploadsDir, 'artists');
   fs.mkdirSync(uploadDir, { recursive: true });
   return uploadDir;
 }

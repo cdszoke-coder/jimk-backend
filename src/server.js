@@ -22,7 +22,7 @@ app.use('/api/public', publicRoutes);
 app.use('/api/admin', adminRoutes);
 
 const publicDir = path.join(__dirname, '..', 'public');
-const uploadsDir = path.join(publicDir, 'uploads');
+const uploadsDir = env.uploadsDir;
 fs.mkdirSync(uploadsDir, { recursive: true });
 app.use('/uploads', express.static(uploadsDir, { maxAge: '7d' }));
 if (fs.existsSync(publicDir)) {

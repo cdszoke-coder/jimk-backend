@@ -23,8 +23,10 @@ const {
   ensureArtistUploadDir
 } = require('../services/artistService');
 
-const publicDir = path.join(__dirname, '..', '..', 'public');
-const uploadDir = ensureArtistUploadDir(publicDir);
+const env = require('../config/env');
+const uploadsRoot = env.uploadsDir;
+fs.mkdirSync(uploadsRoot, { recursive: true });
+const uploadDir = ensureArtistUploadDir(uploadsRoot);
 
 const storage = multer.memoryStorage();
 const HEIC_MIME_RE = /^image\/(heic|heif|heic-sequence|heif-sequence)$/i;
@@ -154,7 +156,8 @@ adminRouter.delete('/artists/:id/artwork', (req, res) => {
       hero_image_url: heroImageUrl
     });
     if (removeUrl.startsWith('/uploads/artists/')) {
-      const absolute = path.join(publicDir, removeUrl.replace(/^\/+/, ''));
+      const relative = removeUrl.replace(/^\/uploads\//, '');
+      const absolute = path.join(uploadsRoot, relative);
       fs.promises.unlink(absolute).catch(() => {});
     }
     return ok(res, { artist: updated });

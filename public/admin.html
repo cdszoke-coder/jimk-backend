@@ -1,0 +1,495 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>JIMK Moderation Dashboard</title>
+  <meta name="robots" content="noindex,nofollow" />
+  <style>
+    :root {
+      --bg:#12071f;
+      --bg-2:#1a0d2f;
+      --panel:#24113d;
+      --panel-2:#2f174f;
+      --panel-3:#3b1f61;
+      --ink:#f8f2ff;
+      --muted:#c9bddc;
+      --line:rgba(240,195,91,.18);
+      --gold:#f0c35b;
+      --gold-2:#c9952b;
+      --purple:#8d5cff;
+      --purple-2:#c2a9ff;
+      --ok:#46b96d;
+      --warn:#f0af49;
+      --bad:#d85c67;
+      --shadow:0 24px 60px rgba(0,0,0,.28);
+    }
+    * { box-sizing:border-box; }
+    html { scroll-behavior:smooth; }
+    body {
+      margin:0;
+      font-family:Inter,Arial,sans-serif;
+      background:
+        radial-gradient(circle at top, rgba(141,92,255,.22), transparent 28%),
+        radial-gradient(circle at right, rgba(240,195,91,.12), transparent 24%),
+        linear-gradient(180deg, #1e0c33 0%, #150824 40%, #0e0618 100%);
+      color:var(--ink);
+    }
+    h1,h2,h3,h4 { margin:0 0 10px; font-family:Cinzel, Georgia, serif; }
+    p { margin:0; }
+    a { color:#ffe7a8; }
+    .wrap { max-width: 1500px; margin:0 auto; padding:24px; }
+    .hero {
+      display:grid;
+      grid-template-columns: minmax(0,1.35fr) minmax(340px,.85fr);
+      gap:18px;
+      align-items:start;
+      margin-bottom:18px;
+    }
+    .badge {
+      display:inline-flex;
+      padding:7px 12px;
+      border-radius:999px;
+      font-size:12px;
+      letter-spacing:.12em;
+      text-transform:uppercase;
+      color:#ffe7a6;
+      border:1px solid rgba(240,195,91,.34);
+      background:rgba(240,195,91,.08);
+      margin-bottom:12px;
+    }
+    .lede {
+      color:var(--muted);
+      line-height:1.65;
+      max-width:900px;
+    }
+    .panel {
+      background:linear-gradient(180deg, rgba(47,23,79,.95), rgba(27,13,47,.96));
+      border:1px solid var(--line);
+      border-radius:22px;
+      padding:18px;
+      box-shadow:var(--shadow);
+      backdrop-filter: blur(10px);
+    }
+    .hero-card { min-height: 100%; }
+    .auth-panel .field + .field,
+    .stack > * + * { margin-top:12px; }
+    .grid { display:grid; gap:18px; }
+    .stats { grid-template-columns:repeat(7,minmax(0,1fr)); margin-bottom:18px; }
+    .main { grid-template-columns: minmax(0,1.15fr) minmax(420px,.9fr) minmax(380px,.9fr); align-items:start; }
+    .bottom { grid-template-columns: 1fr 1fr 1fr; margin-top:18px; }
+    .stat .label {
+      color:var(--muted);
+      font-size:11px;
+      letter-spacing:.12em;
+      text-transform:uppercase;
+    }
+    .stat .value {
+      font-size:30px;
+      font-weight:800;
+      margin-top:8px;
+      color:#fff2cc;
+    }
+    .row, .row-between {
+      display:flex;
+      gap:10px;
+      flex-wrap:wrap;
+      align-items:center;
+    }
+    .row-between { justify-content:space-between; }
+    .field {
+      display:flex;
+      flex-direction:column;
+      gap:7px;
+      min-width:0;
+    }
+    .field-grid {
+      display:grid;
+      grid-template-columns:repeat(2,minmax(0,1fr));
+      gap:12px;
+    }
+    .field.full { grid-column:1 / -1; }
+    label {
+      font-size:12px;
+      letter-spacing:.06em;
+      text-transform:uppercase;
+      color:#e9d7ff;
+    }
+    input, textarea, select, button {
+      font:inherit;
+    }
+    input, textarea, select {
+      width:100%;
+      padding:12px 13px;
+      border-radius:14px;
+      border:1px solid rgba(194,169,255,.18);
+      background:rgba(12,5,24,.78);
+      color:var(--ink);
+      outline:none;
+      transition:.18s ease;
+    }
+    input:focus, textarea:focus, select:focus {
+      border-color: rgba(240,195,91,.55);
+      box-shadow:0 0 0 3px rgba(240,195,91,.10);
+    }
+    textarea { min-height:96px; resize:vertical; }
+    button {
+      border:0;
+      border-radius:14px;
+      padding:11px 14px;
+      cursor:pointer;
+      transition:.16s ease;
+    }
+    button:hover { transform:translateY(-1px); }
+    button:disabled { opacity:.5; cursor:not-allowed; transform:none; }
+    .btn {
+      background:#301a4a;
+      color:#fff;
+      border:1px solid rgba(194,169,255,.22);
+    }
+    .btn.primary {
+      background:linear-gradient(135deg, var(--gold), var(--gold-2));
+      color:#311a00;
+      font-weight:800;
+      border-color:transparent;
+    }
+    .btn.ok { background:linear-gradient(135deg, #45b96d, #2f9554); color:#fff; }
+    .btn.warn { background:linear-gradient(135deg, #efb24f, #d28c18); color:#2f1800; font-weight:700; }
+    .btn.bad { background:linear-gradient(135deg, #d85c67, #b63e48); color:#fff; }
+    .btn.ghost { background:transparent; color:var(--ink); }
+    .btn.sm { padding:8px 10px; font-size:13px; border-radius:12px; }
+    .pill {
+      display:inline-flex;
+      align-items:center;
+      justify-content:center;
+      padding:4px 10px;
+      border-radius:999px;
+      font-size:12px;
+      border:1px solid rgba(240,195,91,.18);
+      background:rgba(255,255,255,.05);
+      color:#ffe8b0;
+      white-space:nowrap;
+    }
+    .pill.pending { background:rgba(240,175,73,.16); color:#ffd48d; }
+    .pill.approved { background:rgba(70,185,109,.18); color:#b8f7ca; }
+    .pill.rejected { background:rgba(216,92,103,.18); color:#ffcad0; }
+    .pill.merged { background:rgba(141,92,255,.16); color:#ded0ff; }
+    .muted, .note, .small { color:var(--muted); }
+    .note { font-size:13px; line-height:1.55; }
+    .small { font-size:12px; }
+    .ok-text { color:#bff8cf; }
+    .danger-text { color:#ffc7cf; }
+    .toolbar { margin-bottom:14px; }
+    .toolbar .field { flex:1 1 180px; }
+    .list {
+      display:grid;
+      gap:10px;
+      max-height:820px;
+      overflow:auto;
+      padding-right:4px;
+    }
+    .card {
+      background:linear-gradient(180deg, rgba(61,31,99,.9), rgba(32,16,54,.96));
+      border:1px solid rgba(240,195,91,.14);
+      border-radius:16px;
+      padding:14px;
+    }
+    .queue-card.selected, .owner-card.selected { outline:2px solid rgba(240,195,91,.55); }
+    .queue-card > button, .owner-card > button {
+      all:unset;
+      display:block;
+      width:100%;
+      cursor:pointer;
+    }
+    .queue-meta, .owner-meta {
+      font-size:13px;
+      color:var(--muted);
+      line-height:1.5;
+      margin-top:6px;
+    }
+    .code {
+      display:inline-block;
+      padding:4px 8px;
+      border-radius:10px;
+      background:#130a23;
+      border:1px solid rgba(194,169,255,.14);
+      font-size:12px;
+      font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+      word-break:break-all;
+    }
+    .empty {
+      padding:22px;
+      border-radius:16px;
+      border:1px dashed rgba(240,195,91,.18);
+      color:var(--muted);
+      text-align:center;
+    }
+    .pagination {
+      display:flex;
+      justify-content:space-between;
+      gap:10px;
+      align-items:center;
+      margin-top:14px;
+    }
+    .checkbox-row {
+      display:flex;
+      gap:10px;
+      align-items:flex-start;
+    }
+    .checkbox-row input { width:auto; margin-top:3px; }
+    .submission-actions, .owner-actions {
+      display:flex;
+      gap:10px;
+      flex-wrap:wrap;
+      margin-top:14px;
+    }
+    .divider {
+      height:1px;
+      background:rgba(255,255,255,.08);
+      margin:14px 0;
+    }
+    .sticky {
+      position:sticky;
+      top:20px;
+    }
+    .audit-list {
+      max-height:340px;
+      overflow:auto;
+    }
+    .audit-item {
+      padding:11px 0;
+      border-bottom:1px solid rgba(255,255,255,.08);
+    }
+    .audit-item:last-child { border-bottom:0; }
+    .workflow-list {
+      margin:0;
+      padding-left:18px;
+      color:var(--muted);
+      line-height:1.65;
+      display:grid;
+      gap:6px;
+    }
+    .hint-box {
+      padding:12px 14px;
+      border-radius:16px;
+      background:rgba(240,195,91,.07);
+      border:1px solid rgba(240,195,91,.18);
+      color:#ffe7b0;
+      line-height:1.55;
+      font-size:13px;
+    }
+    @media (max-width: 1320px) {
+      .stats { grid-template-columns: repeat(4, 1fr); }
+      .main { grid-template-columns: 1fr; }
+      .bottom { grid-template-columns: 1fr; }
+      .sticky { position:static; }
+      .hero { grid-template-columns: 1fr; }
+    }
+    @media (max-width: 820px) {
+      .stats, .field-grid { grid-template-columns: 1fr; }
+      h1 { font-size:32px; }
+      .wrap { padding:16px; }
+    }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <section class="hero">
+      <div class="panel hero-card">
+        <div class="badge">Jesus Is My King Movement · Admin</div>
+        <h1>Moderation Dashboard</h1>
+        <p class="lede">Review, approve, reject, merge, search, and organize a large number of testimony submissions from one place. This dashboard is built for high-volume moderation with a queue, notes, server-side search, filters, pagination, owner lookup, bulk actions, and audit history.</p>
+        <div class="divider"></div>
+        <div class="hint-box">Tip: keep new testimony item codes pointing to the founder by default, then approve or merge submissions when you are ready. That way every QR works even before a person is reviewed.</div>
+      </div>
+      <div class="panel auth-panel">
+        <div class="field">
+          <label>Admin API key</label>
+          <input id="adminKey" type="password" placeholder="Enter x-admin-key" />
+        </div>
+        <div class="row" style="margin-top:12px">
+          <button class="btn primary" id="saveKeyBtn">Save key</button>
+          <button class="btn ghost" id="reloadAllBtn">Reload</button>
+        </div>
+        <p class="note" id="statusNote">Enter your admin key to load moderation data.</p>
+      </div>
+    </section>
+
+    <section class="grid stats">
+      <div class="panel stat"><div class="label">Pending</div><div class="value" id="statPending">0</div></div>
+      <div class="panel stat"><div class="label">Approved new</div><div class="value" id="statApprovedNew">0</div></div>
+      <div class="panel stat"><div class="label">Merged</div><div class="value" id="statMerged">0</div></div>
+      <div class="panel stat"><div class="label">Rejected</div><div class="value" id="statRejected">0</div></div>
+      <div class="panel stat"><div class="label">Active owners</div><div class="value" id="statOwners">0</div></div>
+      <div class="panel stat"><div class="label">Claimed codes</div><div class="value" id="statClaimed">0</div></div>
+      <div class="panel stat"><div class="label">Founder default codes</div><div class="value" id="statDefaultCodes">0</div></div>
+    </section>
+
+    <section class="grid main">
+      <div class="panel">
+        <div class="row-between">
+          <h2>Moderation Queue</h2>
+          <span class="pill" id="queuePill">0 results</span>
+        </div>
+        <div class="grid toolbar">
+          <div class="row">
+            <div class="field" style="flex:2 1 320px">
+              <label>Search submissions</label>
+              <input id="submissionQuery" type="text" placeholder="Name, email, city, quote, item code" />
+            </div>
+            <div class="field" style="width:180px">
+              <label>Status</label>
+              <select id="submissionStatus">
+                <option value="pending">pending</option>
+                <option value="all">all</option>
+                <option value="approved_new_owner">approved_new_owner</option>
+                <option value="merged_to_existing">merged_to_existing</option>
+                <option value="rejected">rejected</option>
+              </select>
+            </div>
+            <div class="field" style="width:120px">
+              <label>Page size</label>
+              <select id="submissionPageSize">
+                <option>10</option>
+                <option selected>20</option>
+                <option>50</option>
+                <option>100</option>
+              </select>
+            </div>
+            <div class="field" style="width:120px">
+              <label>&nbsp;</label>
+              <button class="btn primary" id="applySubmissionFiltersBtn">Apply</button>
+            </div>
+          </div>
+          <div class="row-between">
+            <div class="row">
+              <button class="btn sm ghost" id="selectAllVisibleBtn">Select page</button>
+              <button class="btn sm bad" id="bulkRejectBtn">Bulk reject</button>
+              <span class="note" id="selectedCountLabel">0 selected</span>
+            </div>
+            <span class="small" id="submissionRangeLabel">Showing 0–0</span>
+          </div>
+        </div>
+        <div class="list" id="submissionList"></div>
+        <div class="pagination">
+          <button class="btn ghost" id="submissionPrevBtn">← Prev</button>
+          <span class="small" id="submissionPageLabel">Page 1 of 1</span>
+          <button class="btn ghost" id="submissionNextBtn">Next →</button>
+        </div>
+      </div>
+
+      <div class="panel sticky">
+        <div class="row-between">
+          <h2>Submission Review</h2>
+          <span class="pill" id="reviewStatusPill">No submission selected</span>
+        </div>
+        <div id="submissionReview" class="stack">
+          <div class="empty">Choose a submission from the queue to review the full details, save notes, approve it, merge it into an existing owner, or reject it.</div>
+        </div>
+      </div>
+
+      <div class="panel sticky">
+        <div class="row-between">
+          <h2>Owner Search & Merge</h2>
+          <span class="pill" id="ownerPill">0 owners</span>
+        </div>
+        <div class="row">
+          <div class="field" style="flex:1 1 220px">
+            <label>Search owners</label>
+            <input id="ownerQuery" type="text" placeholder="Name, email, slug, item code" />
+          </div>
+          <div class="field" style="width:160px">
+            <label>Owner status</label>
+            <select id="ownerStatusFilter">
+              <option value="all">all</option>
+              <option value="active">active</option>
+              <option value="hidden">hidden</option>
+              <option value="archived">archived</option>
+            </select>
+          </div>
+          <div class="field" style="width:120px">
+            <label>Page size</label>
+            <select id="ownerPageSize">
+              <option>5</option>
+              <option selected>10</option>
+              <option>20</option>
+            </select>
+          </div>
+        </div>
+        <div class="list" id="ownerList" style="margin-top:12px;max-height:300px"></div>
+        <div class="pagination">
+          <button class="btn ghost" id="ownerPrevBtn">← Prev</button>
+          <span class="small" id="ownerPageLabel">Page 1 of 1</span>
+          <button class="btn ghost" id="ownerNextBtn">Next →</button>
+        </div>
+        <div class="divider"></div>
+        <h3>Owner draft / editor</h3>
+        <div class="field-grid">
+          <div class="field"><label>Owner ID</label><input id="ownerId" type="text" readonly /></div>
+          <div class="field"><label>Slug</label><input id="ownerSlug" type="text" placeholder="jordan-m" /></div>
+          <div class="field"><label>Display name</label><input id="ownerDisplayName" type="text" placeholder="Jordan M." /></div>
+          <div class="field"><label>Email</label><input id="ownerEmail" type="email" placeholder="owner@email.com" /></div>
+          <div class="field"><label>Location</label><input id="ownerLocation" type="text" placeholder="Dallas, TX" /></div>
+          <div class="field"><label>Status</label><select id="ownerStatus"><option value="active">active</option><option value="hidden">hidden</option><option value="archived">archived</option></select></div>
+          <div class="field full"><label>Item codes</label><textarea id="ownerItemCodes" placeholder="JIMK-SHARE-001&#10;JIMK-SHARE-007"></textarea></div>
+          <div class="field full"><label>Public video URL</label><input id="ownerPublicVideoUrl" type="url" placeholder="https://www.youtube.com/shorts/..." /></div>
+          <div class="field full"><label>Embed video URL</label><input id="ownerEmbedVideoUrl" type="url" placeholder="https://www.youtube.com/embed/..." /></div>
+          <div class="field full"><label>Short quote</label><input id="ownerShortQuote" type="text" placeholder="One short line for previews" /></div>
+          <div class="field full"><label>Summary</label><textarea id="ownerSummary" placeholder="Longer testimony summary"></textarea></div>
+        </div>
+        <div class="field" style="margin-top:12px">
+          <label><input id="replaceOwnerVideoToggle" type="checkbox" style="width:auto;margin-right:8px" />Replace selected owner video/details when merging</label>
+        </div>
+        <div class="submission-actions">
+          <button class="btn primary" id="saveOwnerBtn">Save owner</button>
+          <button class="btn ok" id="approveNewOwnerBtn">Approve as new owner</button>
+          <button class="btn warn" id="mergeIntoOwnerBtn">Merge into selected owner</button>
+          <button class="btn ghost" id="clearOwnerDraftBtn">Clear draft</button>
+        </div>
+        <p class="note" id="ownerHint">Select a submission to prefill a new owner draft, or select an existing owner to merge the submission into that owner.</p>
+      </div>
+    </section>
+
+    <section class="grid bottom">
+      <div class="panel">
+        <h2>Founder Default</h2>
+        <p class="note">Every unclaimed testimony QR points here until a person is approved.</p>
+        <div class="field-grid">
+          <div class="field full"><label>Display name</label><input id="founderName" type="text" /></div>
+          <div class="field full"><label>Public video URL</label><input id="founderPublicVideoUrl" type="url" /></div>
+          <div class="field full"><label>Embed video URL</label><input id="founderEmbedVideoUrl" type="url" /></div>
+          <div class="field full"><label>Short quote</label><input id="founderShortQuote" type="text" /></div>
+          <div class="field full"><label>Summary</label><textarea id="founderSummary"></textarea></div>
+          <div class="field full"><label>Site base URL</label><input id="siteBaseUrl" type="url" placeholder="https://www.jesusismykingmovement.com" /></div>
+        </div>
+        <div class="submission-actions"><button class="btn primary" id="saveFounderBtn">Save founder default</button></div>
+      </div>
+
+      <div class="panel">
+        <h2>Bulk Item Code Import</h2>
+        <p class="note">Add newly printed testimony QR codes in batches so the system can handle large submission waves without manual code setup one by one.</p>
+        <div class="field"><label>Item codes</label><textarea id="bulkItemCodes" placeholder="JIMK-SHARE-501&#10;JIMK-SHARE-502&#10;JIMK-SHARE-503"></textarea></div>
+        <div class="submission-actions"><button class="btn primary" id="importItemCodesBtn">Import item codes</button></div>
+        <div class="divider"></div>
+        <h3>Moderation workflow</h3>
+        <ol class="workflow-list">
+          <li>Open the queue and filter by pending, approved, merged, or rejected.</li>
+          <li>Search by name, email, city, quote, or item code.</li>
+          <li>Open a submission, save notes, then approve, merge, or reject.</li>
+          <li>Use owner search to avoid duplicate profiles before approval.</li>
+          <li>Use bulk reject for spam or duplicate batches.</li>
+        </ol>
+      </div>
+
+      <div class="panel">
+        <div class="row-between">
+          <h2>Recent Audit</h2>
+          <button class="btn sm ghost" id="reloadAuditBtn">Reload</button>
+        </div>
+        <div class="audit-list" id="auditList"></div>
+      </div>
+    </section>
+  </div>
+  <script src="js/admin-dashboard.js"></script>
+</body>
+</html>

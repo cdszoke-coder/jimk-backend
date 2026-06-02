@@ -1,0 +1,19 @@
+{
+  "name": "jesus-is-my-king-2qr-backend",
+  "version": "1.0.0",
+  "private": true,
+  "description": "2-QR testimony workflow backend for Jesus Is My King Movement",
+  "main": "src/server.js",
+  "scripts": {
+    "start": "node src/server.js",
+    "dev": "node --watch src/server.js",
+    "check": "node --check src/server.js && node --check src/routes/public.js && node --check src/routes/admin.js && node --check src/services/testimonyService.js"
+  },
+  "dependencies": {
+    "better-sqlite3": "^11.8.1",
+    "cors": "^2.8.5",
+    "dotenv": "^16.4.7",
+    "express": "^4.21.2",
+    "nanoid": "^5.0.9"
+  }
+}

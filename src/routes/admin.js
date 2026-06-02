@@ -29,7 +29,10 @@ const {
 } = require('../utils/validators');
 
 const router = express.Router();
+const { adminRouter: artistsAdminRouter } = require('./artists');
+
 router.use(adminAuth);
+router.use(artistsAdminRouter);
 
 router.get('/dashboard', (req, res) => {
   const db = getDb();

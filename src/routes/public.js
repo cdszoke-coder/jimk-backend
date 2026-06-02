@@ -13,6 +13,9 @@ const {
 } = require('../utils/validators');
 
 const router = express.Router();
+const { publicRouter: artistsPublicRouter } = require('./artists');
+
+router.use(artistsPublicRouter);
 
 router.get('/health', (req, res) => ok(res, { ok: true }));
 

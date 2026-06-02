@@ -489,7 +489,86 @@
         <div class="audit-list" id="auditList"></div>
       </div>
     </section>
+
+    <section class="grid" style="grid-template-columns: minmax(0,420px) minmax(0,1fr); gap:18px; margin-top:18px;">
+      <div class="panel sticky">
+        <div class="row-between">
+          <h2>Artists</h2>
+          <span class="pill" id="artistPill">0 artists</span>
+        </div>
+        <p class="note">Each artist gets their own landing page at <code>/artist.html?artist=slug</code>. Use this to make their QR code go straight to that page.</p>
+        <div class="row" style="margin-top:10px">
+          <div class="field" style="flex:1 1 200px">
+            <label>Search artists</label>
+            <input id="artistQuery" type="text" placeholder="Name, slug, location" />
+          </div>
+          <div class="field" style="width:130px">
+            <label>Status</label>
+            <select id="artistStatusFilter">
+              <option value="all">all</option>
+              <option value="active" selected>active</option>
+              <option value="hidden">hidden</option>
+              <option value="archived">archived</option>
+            </select>
+          </div>
+        </div>
+        <div class="list" id="artistList" style="margin-top:12px;max-height:520px"></div>
+        <div class="submission-actions" style="margin-top:12px">
+          <button class="btn primary" id="newArtistBtn">+ New artist</button>
+          <button class="btn ghost" id="reloadArtistsBtn">Reload</button>
+        </div>
+      </div>
+
+      <div class="panel">
+        <div class="row-between">
+          <h2>Artist Editor</h2>
+          <span class="pill" id="artistEditorPill">No artist selected</span>
+        </div>
+        <p class="note" id="artistQrHint">Pick an artist on the left to edit them. The QR URL for the selected artist will show here.</p>
+        <div class="field-grid" style="margin-top:8px">
+          <div class="field"><label>Artist ID</label><input id="artistId" type="text" readonly /></div>
+          <div class="field"><label>Slug (used in QR URL)</label><input id="artistSlug" type="text" placeholder="artist-one" /></div>
+          <div class="field"><label>Display name</label><input id="artistDisplayName" type="text" placeholder="Artist One" /></div>
+          <div class="field"><label>Location</label><input id="artistLocation" type="text" placeholder="Brooklyn, NY" /></div>
+          <div class="field"><label>Medium</label><input id="artistMedium" type="text" placeholder="Ink &amp; Watercolor" /></div>
+          <div class="field"><label>Joined label</label><input id="artistJoined" type="text" placeholder="Joined Jan 2025" /></div>
+          <div class="field"><label>Status</label><select id="artistStatus"><option value="active">active</option><option value="hidden">hidden</option><option value="archived">archived</option></select></div>
+          <div class="field"><label>Public testimony video URL</label><input id="artistPublicVideoUrl" type="url" placeholder="https://www.youtube.com/watch?v=..." /></div>
+          <div class="field full"><label>Embed video URL (auto-filled)</label><input id="artistEmbedVideoUrl" type="url" placeholder="https://www.youtube.com/embed/..." /></div>
+          <div class="field full"><label>Short quote</label><input id="artistShortQuote" type="text" placeholder="One short line for previews" /></div>
+          <div class="field full"><label>Bio</label><textarea id="artistBio" placeholder="Artist bio"></textarea></div>
+          <div class="field full"><label>Testimony summary</label><textarea id="artistTestimony" placeholder="What Jesus has done in their life"></textarea></div>
+        </div>
+        <div class="submission-actions">
+          <button class="btn primary" id="saveArtistBtn">Save artist</button>
+          <button class="btn ghost" id="clearArtistBtn">Clear form</button>
+        </div>
+
+        <div class="divider"></div>
+        <h3>Artwork (auto-scaled for the site)</h3>
+        <p class="note">Upload original art here. Images are auto-resized to fit (max 1600px) and saved as WebP so the site stays fast. The first image becomes the hero image unless you change it.</p>
+        <div class="row" style="margin-top:10px;align-items:flex-end">
+          <div class="field" style="flex:1 1 240px">
+            <label>Upload artwork (JPG, PNG, WebP — up to 12MB each)</label>
+            <input id="artistArtworkFiles" type="file" accept="image/*" multiple />
+          </div>
+          <div class="field" style="width:auto">
+            <label class="checkbox-row"><input id="artistArtworkSetHero" type="checkbox" /> Use first upload as hero image</label>
+          </div>
+          <div class="field" style="width:140px">
+            <label>&nbsp;</label>
+            <button class="btn primary" id="uploadArtworkBtn">Upload</button>
+          </div>
+        </div>
+        <div id="artistArtworkGallery" class="grid" style="grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:12px;margin-top:14px"></div>
+
+        <div class="divider"></div>
+        <div class="field full"><label>QR code URL for this artist</label><input id="artistQrUrl" type="text" readonly /></div>
+        <p class="note">Print this URL as the QR code for any product made by this artist. It opens the artist's landing page on your live website.</p>
+      </div>
+    </section>
   </div>
   <script src="js/admin-dashboard.js"></script>
+  <script src="js/admin-artists.js"></script>
 </body>
 </html>

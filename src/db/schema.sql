@@ -73,3 +73,25 @@ CREATE INDEX IF NOT EXISTS idx_submissions_status_created_at ON testimony_submis
 CREATE INDEX IF NOT EXISTS idx_owner_profiles_email ON owner_profiles(email);
 CREATE INDEX IF NOT EXISTS idx_owner_profiles_status_updated_at ON owner_profiles(status, updated_at DESC);
 CREATE INDEX IF NOT EXISTS idx_owner_profiles_slug ON owner_profiles(slug);
+
+CREATE TABLE IF NOT EXISTS artist_profiles (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  slug TEXT NOT NULL UNIQUE,
+  display_name TEXT NOT NULL,
+  location TEXT,
+  medium TEXT,
+  joined_label TEXT,
+  short_quote TEXT,
+  bio TEXT,
+  testimony_summary TEXT,
+  public_video_url TEXT,
+  embed_video_url TEXT,
+  hero_image_url TEXT,
+  artwork_json TEXT NOT NULL DEFAULT '[]',
+  status TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active','hidden','archived')),
+  created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_artist_profiles_status ON artist_profiles(status);
+CREATE INDEX IF NOT EXISTS idx_artist_profiles_slug ON artist_profiles(slug);

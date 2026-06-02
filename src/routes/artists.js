@@ -4,6 +4,8 @@ const fs = require('fs');
 const crypto = require('crypto');
 const multer = require('multer');
 const sharp = require('sharp');
+let heicConvert = null;
+try { heicConvert = require('heic-convert'); } catch (error) { heicConvert = null; }
 const { getDb } = require('../db/client');
 const adminAuth = require('../middleware/adminAuth');
 const { ok, badRequest, notFound } = require('../utils/http');
@@ -25,14 +27,18 @@ const publicDir = path.join(__dirname, '..', '..', 'public');
 const uploadDir = ensureArtistUploadDir(publicDir);
 
 const storage = multer.memoryStorage();
+const HEIC_MIME_RE = /^image\/(heic|heif|heic-sequence|heif-sequence)$/i;
+const HEIC_EXT_RE = /\.(heic|heif)$/i;
+function isHeicFile(file) {
+  return HEIC_MIME_RE.test(file.mimetype || '') || HEIC_EXT_RE.test(file.originalname || '');
+}
 const upload = multer({
   storage,
-  limits: { fileSize: 12 * 1024 * 1024 },
+  limits: { fileSize: 25 * 1024 * 1024 },
   fileFilter: (req, file, cb) => {
-    if (!/^image\/(jpe?g|png|webp|gif)$/i.test(file.mimetype)) {
-      return cb(new Error('Only image files (jpg, png, webp, gif) are allowed'));
-    }
-    cb(null, true);
+    const isStandardImage = /^image\/(jpe?g|png|webp|gif)$/i.test(file.mimetype);
+    if (isStandardImage || isHeicFile(file)) return cb(null, true);
+    return cb(new Error('Only image files (jpg, png, webp, gif, heic) are allowed'));
   }
 });
 
@@ -40,14 +46,32 @@ function randomFileName(extension = 'webp') {
   return `${Date.now().toString(36)}-${crypto.randomBytes(6).toString('hex')}.${extension}`;
 }
 
-async function processAndSaveImage(buffer, artistSlug, options = {}) {
+async function decodeHeicBuffer(buffer) {
+  if (!heicConvert) {
+    throw new Error('HEIC support is not installed on the server. Run `npm install heic-convert` and redeploy.');
+  }
+  const jpegBuffer = await heicConvert({
+    buffer,
+    format: 'JPEG',
+    quality: 0.92
+  });
+  return Buffer.from(jpegBuffer);
+}
+
+async function processAndSaveImage(file, artistSlug, options = {}) {
   const artistDir = path.join(uploadDir, artistSlug);
   fs.mkdirSync(artistDir, { recursive: true });
   const fileName = randomFileName('webp');
   const filePath = path.join(artistDir, fileName);
   const maxWidth = Number(options.max_width || 1600);
   const maxHeight = Number(options.max_height || 1600);
-  await sharp(buffer, { failOn: 'none' })
+
+  let workingBuffer = file.buffer;
+  if (isHeicFile(file)) {
+    workingBuffer = await decodeHeicBuffer(file.buffer);
+  }
+
+  await sharp(workingBuffer, { failOn: 'none' })
     .rotate()
     .resize({
       width: maxWidth,
@@ -146,16 +170,26 @@ adminRouter.post('/artists/:id/artwork', upload.array('images', 12), async (req,
     if (!artist) return notFound(res, 'Artist not found');
     if (!req.files || !req.files.length) return badRequest(res, 'No image files received');
     const uploadedUrls = [];
+    const failed = [];
     for (const file of req.files) {
-      const url = await processAndSaveImage(file.buffer, artist.slug, {
-        max_width: req.body.max_width || 1600,
-        max_height: req.body.max_height || 1600
-      });
-      uploadedUrls.push(url);
+      try {
+        const url = await processAndSaveImage(file, artist.slug, {
+          max_width: req.body.max_width || 1600,
+          max_height: req.body.max_height || 1600
+        });
+        uploadedUrls.push(url);
+      } catch (fileError) {
+        failed.push({ name: file.originalname, error: fileError.message });
+      }
+    }
+    if (!uploadedUrls.length) {
+      return badRequest(res, failed.length
+        ? `Could not process uploads: ${failed.map(f => `${f.name} (${f.error})`).join('; ')}`
+        : 'No image files received');
     }
     const setAsHero = String(req.body.set_as_hero || '').toLowerCase() === 'true';
     const updated = addArtistArtwork(db, req.params.id, uploadedUrls, { set_as_hero: setAsHero });
-    return res.status(201).json({ artist: updated, uploaded_urls: uploadedUrls });
+    return res.status(201).json({ artist: updated, uploaded_urls: uploadedUrls, failed });
   } catch (error) {
     return badRequest(res, error.message);
   }

@@ -229,7 +229,10 @@
       el.artworkSetHero.checked = false;
       fillForm(data.artist);
       await reloadArtists();
-      setHint(`Uploaded ${data.uploaded_urls.length} image(s).`);
+      const failedNote = (data.failed && data.failed.length)
+        ? ` (${data.failed.length} file(s) could not be processed: ${data.failed.map(f => f.name).join(', ')})`
+        : '';
+      setHint(`Uploaded ${data.uploaded_urls.length} image(s).${failedNote}`, !failedNote);
     } catch (error) {
       setHint(error.message, false);
     }

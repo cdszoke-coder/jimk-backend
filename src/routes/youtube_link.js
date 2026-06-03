@@ -190,12 +190,12 @@ router.post('/admin/youtube/testimonies/:id/approve-link', adminAuth, async (req
     let row = db.prepare('SELECT * FROM testimony_item_codes WHERE item_code = ?').get(code);
     if (!row) {
       const info = db.prepare(`INSERT INTO testimony_item_codes (item_code, owner_profile_id, destination_mode)
-        VALUES (?, ?, 'owner')`).run(code, owner.id);
+        VALUES (?, ?, 'owner_profile')`).run(code, owner.id);
       attached.push({ code, id: info.lastInsertRowid, was_new: true });
       continue;
     }
     db.prepare(`UPDATE testimony_item_codes
-      SET owner_profile_id = ?, destination_mode = 'owner', updated_at = CURRENT_TIMESTAMP
+      SET owner_profile_id = ?, destination_mode = 'owner_profile', updated_at = CURRENT_TIMESTAMP
       WHERE id = ?`).run(owner.id, row.id);
     attached.push({ code, id: row.id, was_new: false });
   }

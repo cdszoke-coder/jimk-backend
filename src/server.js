@@ -1,10 +1,5 @@
 'use strict';
 
-/**
- * JIMK backend server — drop-in version with ALL routes wired,
- * handling both `module.exports = router` and `module.exports = { router, ... }`.
- */
-
 const fs = require('fs');
 const path = require('path');
 const express = require('express');
@@ -15,51 +10,57 @@ const { initDatabase } = require('./db/client');
 initDatabase();
 
 const publicRoutes = require('./routes/public');
-const adminRoutes = require('./routes/admin');
+const adminRoutes  = require('./routes/admin');
 
-
-// Accept both export styles:
-//   module.exports = router                  (function)
-//   module.exports = { router, ...helpers }  (object with .router)
 function asRouter(mod, label) {
   if (!mod) return null;
   if (typeof mod === 'function') return mod;
   if (typeof mod.router === 'function') return mod.router;
   if (typeof mod.default === 'function') return mod.default;
   if (typeof mod.handle === 'function' && typeof mod.use === 'function') return mod;
-  console.warn('[server] route file', label, 'did not export a router. Skipping.');
+  console.warn('[server] route file', label, 'did not export a single router. Will check for split exports.');
   return null;
 }
 function safeRequireRouter(p) {
+  try { return asRouter(require(p), p); }
+  catch (e) { console.warn('[server] optional route not loaded:', p, '-', e.message); return null; }
+}
+function safeRequireSplit(p) {
   try {
-    return asRouter(require(p), p);
+    const mod = require(p);
+    return {
+      publicRouter: (mod && typeof mod.publicRouter === 'function' && typeof mod.publicRouter.use === 'function') ? mod.publicRouter : null,
+      adminRouter:  (mod && typeof mod.adminRouter  === 'function' && typeof mod.adminRouter.use  === 'function') ? mod.adminRouter  : null
+    };
   } catch (e) {
-    console.warn('[server] optional route not loaded:', p, '-', e.message);
-    return null;
+    console.warn('[server] optional split route not loaded:', p, '-', e.message);
+    return { publicRouter: null, adminRouter: null };
   }
 }
 
-const corePublic           = asRouter(publicRoutes, './routes/public');
-const coreAdmin            = asRouter(adminRoutes,  './routes/admin');
-const artistsRoutes        = safeRequireRouter('./routes/artists');
-const youtubeRoutes        = safeRequireRouter('./routes/youtube');
-const artistYoutubeRoutes  = safeRequireRouter('./routes/artists_youtube');
-const youtubeLinkRoutes    = safeRequireRouter('./routes/youtube_link');
-const welcomeRoutes        = require('./routes/welcome');
+const corePublic          = asRouter(publicRoutes, './routes/public');
+const coreAdmin           = asRouter(adminRoutes,  './routes/admin');
+const artistsSplit        = safeRequireSplit('./routes/artists');         // { publicRouter, adminRouter }
+const youtubeRoutes       = safeRequireRouter('./routes/youtube');
+const artistYoutubeRoutes = safeRequireRouter('./routes/artists_youtube');
+const youtubeLinkRoutes   = safeRequireRouter('./routes/youtube_link');
+const welcomeRoutes       = safeRequireRouter('./routes/welcome');
 
 const app = express();
 app.use(cors());
 app.use(express.json({ limit: '1mb' }));
 app.use(express.urlencoded({ extended: true }));
-app.use('/api', welcomeRoutes);
+
 app.get('/healthz', (req, res) => res.json({ ok: true, service: 'jimk-2qr-backend' }));
 
-if (corePublic)          app.use('/api/public', corePublic);
-if (coreAdmin)           app.use('/api/admin',  coreAdmin);
-if (artistsRoutes)       app.use('/api', artistsRoutes);
-if (youtubeRoutes)       app.use('/api', youtubeRoutes);
-if (artistYoutubeRoutes) app.use('/api', artistYoutubeRoutes);
-if (youtubeLinkRoutes)   app.use('/api', youtubeLinkRoutes);
+if (corePublic)                 app.use('/api/public', corePublic);
+if (coreAdmin)                  app.use('/api/admin',  coreAdmin);
+if (artistsSplit.publicRouter)  app.use('/api/public', artistsSplit.publicRouter);
+if (artistsSplit.adminRouter)   app.use('/api/admin',  artistsSplit.adminRouter);
+if (youtubeRoutes)              app.use('/api', youtubeRoutes);
+if (artistYoutubeRoutes)        app.use('/api', artistYoutubeRoutes);
+if (youtubeLinkRoutes)          app.use('/api', youtubeLinkRoutes);
+if (welcomeRoutes)              app.use('/api', welcomeRoutes);
 
 const uploadsDir = process.env.UPLOADS_DIR ||
   path.join((env && env.dataDir) || '/opt/render/project/src/data', 'uploads');

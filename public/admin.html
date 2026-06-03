@@ -463,6 +463,43 @@
           <div class="field full"><label>Embed video URL</label><input id="ownerEmbedVideoUrl" type="url" placeholder="https://www.youtube.com/embed/..." /></div>
           <div class="field full"><label>Short quote</label><input id="ownerShortQuote" type="text" placeholder="One short line for previews" /></div>
           <div class="field full"><label>Summary</label><textarea id="ownerSummary" placeholder="Longer testimony summary"></textarea></div>
+          <div style="border:1px solid #eee;border-radius:14px;padding:14px;margin-top:16px;background:#fff">
+  <h3 style="margin:0 0 6px">Upload artist video to YouTube</h3>
+  <p style="margin:0 0 12px;color:#555;font-size:13px">
+    Goes to the connected ministry channel as <strong>Unlisted</strong> and is added to the <strong>Artists</strong> playlist. Check the box to make it public on the channel.
+  </p>
+
+  <div style="display:grid;gap:10px;grid-template-columns:1fr;max-width:520px">
+    <label style="font-weight:600;font-size:14px">
+      Video file
+      <input type="file" id="artistYtFile" accept="video/*" style="display:block;margin-top:6px" />
+    </label>
+
+    <label style="font-weight:600;font-size:14px">
+      Title (optional — defaults to "<artist name> — Testimony")
+      <input type="text" id="artistYtTitle" placeholder="Optional video title"
+             style="display:block;width:100%;padding:10px 12px;border:1px solid #ddd;border-radius:10px;margin-top:6px" />
+    </label>
+
+    <label style="display:flex;gap:8px;align-items:flex-start;font-size:14px">
+      <input type="checkbox" id="artistYtMakePublic" style="margin-top:4px" />
+      <span>Make this video public on the YouTube channel (requires the artist's permission).</span>
+    </label>
+
+    <button id="artistYtUploadBtn" type="button"
+      style="padding:12px 18px;border:none;border-radius:12px;background:linear-gradient(135deg,#5a2a82,#b8860b);color:#fff;font-weight:700;cursor:pointer">
+      Upload to YouTube
+    </button>
+
+    <div id="artistYtProgress" style="display:none;height:8px;background:#eee;border-radius:8px;overflow:hidden">
+      <div style="height:100%;width:0;background:#5a2a82;transition:width .2s"></div>
+    </div>
+
+    <div id="artistYtStatus" style="font-weight:600;font-size:14px"></div>
+  </div>
+</div>
+
+<script src="js/admin-artist-youtube.js"></script>
         </div>
         <div class="field" style="margin-top:12px">
           <label><input id="replaceOwnerVideoToggle" type="checkbox" style="width:auto;margin-right:8px" />Replace selected owner video/details when merging</label>

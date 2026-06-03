@@ -1,40 +1,26 @@
 'use strict';
 
 /**
- * Artists admin panel — drop-in version that matches the new admin.html IDs
- * and the real artist_profiles schema:
+ * Artists admin panel — drop-in version.
  *
+ * Upload field-name resilience:
+ *   - Portrait: tries 'portrait' -> 'file' -> 'image'
+ *   - Artwork:  tries 'images'  -> 'files' -> 'artwork'
+ *   Uses the first name that doesn't return "Unexpected field".
+ *
+ * Matches artist_profiles schema:
  *   id, slug, display_name, location, medium, joined_label,
  *   short_quote, bio, testimony_summary,
  *   public_video_url, embed_video_url,
  *   hero_image_url, portrait_image_url,
  *   hero_source ('artwork'|'portrait'),
- *   artwork_json (JSON string of array of URLs),
+ *   artwork_json (JSON string),
  *   status ('active'|'hidden'|'archived'),
  *   created_at, updated_at
- *
- * Required DOM (in admin.html):
- *   #artistSearch, #artistStatusFilter, #artistReloadBtn, #artistNewBtn
- *   #artistList            (left column — clickable artist cards)
- *   #artistEditor          (right column — editor wrapper)
- *   #artistEditorBody      (where the editor form is rendered)
- *   #artistId              (hidden input — currently open artist id)
- *   #artistYoutubeMount    (where the YouTube testimony video upload section lives)
- *
- * Required endpoints (already in src/routes/artists.js):
- *   GET    /api/admin/artists?q=&status=&page=&page_size=
- *   GET    /api/admin/artists/:id
- *   POST   /api/admin/artists
- *   PATCH  /api/admin/artists/:id
- *   POST   /api/admin/artists/:id/artwork           (multipart: files[]=...)
- *   POST   /api/admin/artists/:id/portrait          (multipart: file=...)
- *   POST   /api/admin/artists/:id/hero              (json: {source:'artwork'|'portrait', index?:n})
- *   DELETE /api/admin/artists/:id/artwork           (json: {url})
- *   DELETE /api/admin/artists/:id/portrait
  */
 
 (function () {
-  var BACKEND = ''; // same-origin (admin dashboard is served from the backend)
+  var BACKEND = ''; // same-origin
 
   function key() { return localStorage.getItem('jimk_admin_key') || ''; }
   function esc(s) {
@@ -58,14 +44,51 @@
     return fetch(BACKEND + url, opts).then(function (r) {
       return r.text().then(function (t) {
         var j;
-        try { j = t ? JSON.parse(t) : {}; } catch (e) { j = { error: 'Non-JSON response: ' + t.slice(0, 120) }; }
-        if (!r.ok) throw new Error(j.error || ('HTTP ' + r.status));
+        try { j = t ? JSON.parse(t) : {}; } catch (e) { j = { error: 'Non-JSON response: ' + t.slice(0, 200) }; }
+        if (!r.ok) {
+          var err = new Error(j.error || ('HTTP ' + r.status));
+          err.status = r.status;
+          err.body = j;
+          throw err;
+        }
         return j;
       });
     });
   }
 
-  /* --------------- artist list (left column) --------------- */
+  /**
+   * Tries each candidate field name in order until one succeeds, OR
+   * until we run out of candidates. Detects "Unexpected field" errors
+   * (multer rejects the part), or 500/400 errors whose message contains
+   * "unexpected field", and retries with the next candidate.
+   */
+  function tryFieldNames(url, files, fieldCandidates, extraFormPairs) {
+    var attempt = 0;
+    function next() {
+      if (attempt >= fieldCandidates.length) {
+        return Promise.reject(new Error('No accepted upload field name. Try renaming the field in the front-end or the backend.'));
+      }
+      var name = fieldCandidates[attempt++];
+      var fd = new FormData();
+      if (files && files.length === 1 && !files._multi) {
+        fd.append(name, files[0]);
+      } else if (files && files.length) {
+        for (var i = 0; i < files.length; i++) fd.append(name, files[i]);
+      }
+      if (extraFormPairs) {
+        Object.keys(extraFormPairs).forEach(function (k) { fd.append(k, extraFormPairs[k]); });
+      }
+      return api('POST', url, fd, true).catch(function (e) {
+        var msg = String(e.message || '').toLowerCase();
+        var isFieldError = msg.indexOf('unexpected field') !== -1 || msg.indexOf('multipart') !== -1;
+        if (isFieldError) return next();
+        throw e;
+      });
+    }
+    return next();
+  }
+
+  /* --------------- artist list --------------- */
   function loadList() {
     if (!key()) return;
     var q = encodeURIComponent(getVal('artistSearch'));
@@ -80,19 +103,21 @@
   function renderList(items) {
     var el = $('artistList');
     if (!el) return;
-    if (!items.length) { el.innerHTML = '<div style="color:#666;padding:8px">No artists yet. Click "+ New artist" to add one.</div>'; return; }
+    if (!items.length) {
+      el.innerHTML = '<div style="color:#666;padding:8px">No artists yet. Click "+ New artist" to add one.</div>';
+      return;
+    }
     el.innerHTML = items.map(function (a) {
       var hero = a.hero_image_url || a.portrait_image_url || '';
       var thumb = hero
         ? '<img src="' + esc(hero) + '" style="width:42px;height:42px;border-radius:8px;object-fit:cover;background:#eee" />'
         : '<div style="width:42px;height:42px;border-radius:8px;background:linear-gradient(135deg,#5a2a82,#b8860b)"></div>';
-      var statusTag = '<span style="font-size:11px;background:#eee;color:#333;padding:1px 8px;border-radius:8px">' + esc(a.status || 'active') + '</span>';
       return '<button type="button" data-id="' + a.id + '" class="artist-pick" style="display:flex;gap:10px;align-items:center;width:100%;text-align:left;padding:10px;border:1px solid #eee;border-radius:10px;background:#fff;margin-bottom:8px;cursor:pointer">' +
         thumb +
         '<div style="flex:1;min-width:0">' +
           '<div style="font-weight:600;color:#1f1530;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">' + esc(a.display_name || '(no name)') + '</div>' +
           '<div style="font-size:12px;color:#777">' + esc(a.location || '') + ' &middot; ' + esc(a.medium || '') + '</div>' +
-          '<div style="margin-top:2px">' + statusTag + '</div>' +
+          '<div style="margin-top:2px"><span style="font-size:11px;background:#eee;color:#333;padding:1px 8px;border-radius:8px">' + esc(a.status || 'active') + '</span></div>' +
         '</div>' +
       '</button>';
     }).join('');
@@ -101,7 +126,7 @@
     });
   }
 
-  /* --------------- editor (right column) --------------- */
+  /* --------------- editor --------------- */
   function openArtist(id) {
     if (!id) return openNewArtist();
     api('GET', '/api/admin/artists/' + encodeURIComponent(id))
@@ -130,9 +155,12 @@
     try { return JSON.parse(a.artwork_json || '[]') || []; } catch (e) { return []; }
   }
 
+  function field(label, control) {
+    return '<label style="display:block"><span style="display:block;font-size:13px;font-weight:600;color:#333;margin-bottom:4px">' + esc(label) + '</span>' + control + '</label>';
+  }
+
   function renderEditor(a) {
     setVal('artistId', a.id || '');
-
     var artworks = parseArtwork(a);
     var heroSource = a.hero_source || 'artwork';
 
@@ -147,13 +175,12 @@
           '</div>' +
         '</div>' +
 
-        // Core fields
         '<div style="display:grid;gap:10px;grid-template-columns:1fr 1fr">' +
           field('Display name', '<input type="text" id="f_display_name" value="' + esc(a.display_name) + '" />') +
-          field('Slug (URL part)', '<input type="text" id="f_slug" placeholder="auto from name if blank" value="' + esc(a.slug) + '" />') +
+          field('Slug', '<input type="text" id="f_slug" placeholder="auto from name if blank" value="' + esc(a.slug) + '" />') +
           field('Location', '<input type="text" id="f_location" value="' + esc(a.location) + '" />') +
           field('Medium', '<input type="text" id="f_medium" value="' + esc(a.medium) + '" />') +
-          field('Joined label (e.g. "Jan 2025")', '<input type="text" id="f_joined_label" value="' + esc(a.joined_label) + '" />') +
+          field('Joined label', '<input type="text" id="f_joined_label" value="' + esc(a.joined_label) + '" />') +
           field('Status',
             '<select id="f_status">' +
               '<option value="active"'   + (a.status === 'active'   ? ' selected' : '') + '>Active</option>' +
@@ -167,7 +194,6 @@
         field('Bio', '<textarea id="f_bio" rows="3">' + esc(a.bio) + '</textarea>') +
         field('Testimony summary', '<textarea id="f_testimony_summary" rows="3">' + esc(a.testimony_summary) + '</textarea>') +
 
-        // Artist YouTube testimony video upload (replaces old URL fields)
         '<div id="artistYoutubeMount"></div>' +
 
         // Portrait
@@ -219,18 +245,14 @@
 
     $('artistEditorBody').innerHTML = html;
 
-    // Wire core buttons
     var b;
-    if ((b = $('saveArtistBtn')))   b.addEventListener('click', saveArtist);
-    if ((b = $('reloadArtistBtn'))) b.addEventListener('click', function () { openArtist(a.id); });
-
-    // Portrait
+    if ((b = $('saveArtistBtn')))     b.addEventListener('click', saveArtist);
+    if ((b = $('reloadArtistBtn')))   b.addEventListener('click', function () { openArtist(a.id); });
     if ((b = $('uploadPortraitBtn'))) b.addEventListener('click', uploadPortrait);
     if ((b = $('removePortraitBtn'))) b.addEventListener('click', removePortrait);
-
-    // Artwork
-    if ((b = $('uploadArtworkBtn'))) b.addEventListener('click', uploadArtwork);
+    if ((b = $('uploadArtworkBtn')))  b.addEventListener('click', uploadArtwork);
     if ((b = $('useArtworkHeroBtn'))) b.addEventListener('click', function () { setHeroSource('artwork'); });
+
     document.querySelectorAll('button.set-hero').forEach(function (btn) {
       btn.addEventListener('click', function () {
         setHero(btn.getAttribute('data-url'), Number(btn.getAttribute('data-idx')));
@@ -240,12 +262,7 @@
       btn.addEventListener('click', function () { removeArtwork(btn.getAttribute('data-url')); });
     });
 
-    // Mount the artist YouTube upload panel here (admin-artist-youtube.js wires it up)
     mountArtistYoutubeSection(a);
-  }
-
-  function field(label, control) {
-    return '<label style="display:block"><span style="display:block;font-size:13px;font-weight:600;color:#333;margin-bottom:4px">' + esc(label) + '</span>' + control + '</label>';
   }
 
   function saveArtist() {
@@ -280,15 +297,22 @@
     if (!id) { alert('Save the artist first.'); return; }
     var fileEl = $('portraitFile');
     var f = fileEl && fileEl.files && fileEl.files[0];
-    if (!f) { return; }
+    if (!f) return;
     var makeHero = ($('portraitMakeHero') || {}).checked;
-    var fd = new FormData();
-    fd.append('file', f);
-    if (makeHero) fd.append('make_hero', '1');
-    setStatus('portraitStatus', 'Uploading...');
-    api('POST', '/api/admin/artists/' + encodeURIComponent(id) + '/portrait', fd, true)
-      .then(function () { setStatus('portraitStatus', 'Uploaded.', 'ok'); openArtist(id); })
-      .catch(function (e) { setStatus('portraitStatus', e.message, 'err'); });
+
+    setStatus('portraitStatus', 'Uploading (trying field names)...');
+    var url = '/api/admin/artists/' + encodeURIComponent(id) + '/portrait';
+    var extra = makeHero ? { make_hero: '1' } : null;
+    var fileList = [f]; // single file
+
+    tryFieldNames(url, fileList, ['portrait', 'file', 'image'], extra)
+      .then(function () {
+        setStatus('portraitStatus', 'Uploaded.', 'ok');
+        openArtist(id);
+      })
+      .catch(function (e) {
+        setStatus('portraitStatus', e.message, 'err');
+      });
   }
 
   function removePortrait() {
@@ -307,12 +331,22 @@
     var fileEl = $('artworkFiles');
     var files = fileEl && fileEl.files;
     if (!files || !files.length) return;
-    var fd = new FormData();
-    for (var i = 0; i < files.length; i++) fd.append('files', files[i]);
-    setStatus('artworkStatus', 'Uploading ' + files.length + ' file(s)...');
-    api('POST', '/api/admin/artists/' + encodeURIComponent(id) + '/artwork', fd, true)
-      .then(function () { setStatus('artworkStatus', 'Uploaded.', 'ok'); openArtist(id); })
-      .catch(function (e) { setStatus('artworkStatus', e.message, 'err'); });
+
+    setStatus('artworkStatus', 'Uploading ' + files.length + ' file(s) (trying field names)...');
+    var url = '/api/admin/artists/' + encodeURIComponent(id) + '/artwork';
+
+    // Mark as multi-file so tryFieldNames appends each one
+    var arr = Array.prototype.slice.call(files);
+    arr._multi = true;
+
+    tryFieldNames(url, arr, ['images', 'files', 'artwork'], null)
+      .then(function () {
+        setStatus('artworkStatus', 'Uploaded.', 'ok');
+        openArtist(id);
+      })
+      .catch(function (e) {
+        setStatus('artworkStatus', e.message, 'err');
+      });
   }
 
   function removeArtwork(url) {
@@ -346,7 +380,7 @@
     el.style.color = kind === 'err' ? '#b00020' : (kind === 'ok' ? '#0a7d2c' : '#333');
   }
 
-  /* --------------- YouTube testimony video section (mount + show current) --------------- */
+  /* --------------- YouTube section mount --------------- */
   function mountArtistYoutubeSection(a) {
     var mount = $('artistYoutubeMount');
     if (!mount) return;
@@ -378,14 +412,12 @@
         '</div>' +
       '</div>';
 
-    // Let admin-artist-youtube.js know which artist is open
     if (window.JIMKArtistYouTubeUI && window.JIMKArtistYouTubeUI.showCurrentVideo) {
       window.JIMKArtistYouTubeUI.showCurrentVideo({
         public_video_url: a.public_video_url,
         embed_video_url: a.embed_video_url
       });
     } else {
-      // Fallback: show the iframe ourselves
       if (a.embed_video_url || a.public_video_url) {
         var f = $('artistYtCurrentFrame'); var w = $('artistYtCurrentWrap');
         if (f && w) { f.src = a.embed_video_url || ''; w.style.display = ''; }
@@ -396,10 +428,10 @@
   /* --------------- wire top controls --------------- */
   function wire() {
     var b;
-    if ((b = $('artistReloadBtn'))) b.addEventListener('click', loadList);
-    if ((b = $('artistNewBtn')))    b.addEventListener('click', openNewArtist);
-    if ((b = $('artistSearch')))    b.addEventListener('input', debounce(loadList, 250));
-    if ((b = $('artistStatusFilter'))) b.addEventListener('change', loadList);
+    if ((b = $('artistReloadBtn')))    b.addEventListener('click', loadList);
+    if ((b = $('artistNewBtn')))       b.addEventListener('click', openNewArtist);
+    if ((b = $('artistSearch')))       b.addEventListener('input', debounce(loadList, 250));
+    if ((b = $('artistStatusFilter')) ) b.addEventListener('change', loadList);
   }
   function debounce(fn, ms) {
     var t; return function () { clearTimeout(t); t = setTimeout(fn, ms); };

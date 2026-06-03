@@ -45,7 +45,10 @@ function initDatabase() {
   execFile(db, path.join(__dirname, 'schema.sql'));
   execFile(db, path.join(__dirname, 'seed.sql'));
   runLightMigrations(db);
-  return db;
+  const sql2Path = path.join(__dirname, 'schema_youtube.sql');
+        if (fs.existsSync(sql2Path)) {
+          db.exec(fs.readFileSync(sql2Path, 'utf8'));
+        }  return db;
 }
 
 module.exports = {

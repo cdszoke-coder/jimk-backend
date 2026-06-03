@@ -253,16 +253,8 @@ router.post('/admin/youtube/testimonies/:id/make-unlisted', adminAuth, async (re
   }
 });
 
-/* ============================================================
- * PUBLIC: approved wall (latest approved testimonies)
- * ============================================================ */
-router.get('/public/testimony-wall', (req, res) => {
-  const db = getDb();
-  const rows = db.prepare(`SELECT submitted_name, short_message, youtube_video_id, youtube_embed_url, privacy_status, created_at
-    FROM testimony_video_uploads
-    WHERE review_status = 'approved'
-    ORDER BY reviewed_at DESC LIMIT 24`).all();
-  res.json({ items: rows });
-});
+// NOTE: /public/testimony-wall is intentionally NOT defined here.
+// The correct wall endpoint (which reads from owner_profiles after Approve & link)
+// lives in src/routes/youtube_link.js so it shows linked testimonies with display_name + embed_video_url.
 
 module.exports = router;

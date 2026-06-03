@@ -69,6 +69,17 @@ function setTestimonialsPlaylistId(playlistId) {
   db.prepare(`UPDATE youtube_settings SET testimonials_playlist_id=?, updated_at=CURRENT_TIMESTAMP WHERE id=1`).run(playlistId);
 }
 
+function setArtistsPlaylistId(playlistId) {
+  const db = getDb();
+  // Safe upgrade: if column missing on an old install, add it first
+  try {
+    db.prepare(`UPDATE youtube_settings SET artists_playlist_id=?, updated_at=CURRENT_TIMESTAMP WHERE id=1`).run(playlistId);
+  } catch (e) {
+    try { db.exec(`ALTER TABLE youtube_settings ADD COLUMN artists_playlist_id TEXT`); } catch (e2) {}
+    db.prepare(`UPDATE youtube_settings SET artists_playlist_id=?, updated_at=CURRENT_TIMESTAMP WHERE id=1`).run(playlistId);
+  }
+}
+
 /* ----------------- OAuth URL helpers ----------------- */
 
 function getAuthUrl() {
@@ -224,35 +235,34 @@ function getConnectionInfo() {
     channel_title: row.channel_title || null,
     updated_at: row.updated_at || null,
     testimonials_playlist_id: settings.testimonials_playlist_id || null,
+    artists_playlist_id: settings.artists_playlist_id || null,
     default_visibility: settings.default_visibility || 'unlisted'
   };
 }
 
 /* ----------------- Playlist ----------------- */
 
-async function findOrCreateTestimonialsPlaylist() {
-  const settings = getSettings();
-  if (settings.testimonials_playlist_id) return settings.testimonials_playlist_id;
-
+// Generic: find an existing playlist by title (case-insensitive) on the connected channel,
+// or create it. The `saveFn` is called with the resolved/created playlist id so it can be cached.
+async function findOrCreatePlaylist(title, description, saveFn) {
   const accessToken = await getValidAccessToken();
+  const wanted = String(title || '').trim().toLowerCase();
 
-  // Search the channel's own playlists for "Testimonials"
   let pageToken = '';
   do {
     const url = `https://www.googleapis.com/youtube/v3/playlists?part=snippet&mine=true&maxResults=50${pageToken ? '&pageToken=' + pageToken : ''}`;
     const res = await googleApi('GET', url, { Authorization: `Bearer ${accessToken}` });
     const items = (res.body && res.body.items) || [];
-    const found = items.find((p) => (p.snippet && (p.snippet.title || '').toLowerCase() === 'testimonials'));
+    const found = items.find((p) => (p.snippet && (p.snippet.title || '').toLowerCase() === wanted));
     if (found) {
-      setTestimonialsPlaylistId(found.id);
+      if (typeof saveFn === 'function') saveFn(found.id);
       return found.id;
     }
     pageToken = res.body && res.body.nextPageToken;
   } while (pageToken);
 
-  // Create it
   const createBody = JSON.stringify({
-    snippet: { title: 'Testimonials', description: 'Testimonies submitted to the Jesus Is My King Movement.' },
+    snippet: { title, description: description || '' },
     status: { privacyStatus: 'unlisted' }
   });
   const created = await googleApi('POST',
@@ -265,8 +275,50 @@ async function findOrCreateTestimonialsPlaylist() {
     createBody
   );
   const playlistId = created.body && created.body.id;
-  if (playlistId) setTestimonialsPlaylistId(playlistId);
+  if (playlistId && typeof saveFn === 'function') saveFn(playlistId);
   return playlistId;
+}
+
+async function findOrCreateTestimonialsPlaylist() {
+  const settings = getSettings();
+  if (settings.testimonials_playlist_id) return settings.testimonials_playlist_id;
+  return findOrCreatePlaylist(
+    'Testimonials',
+    'Testimonies submitted to the Jesus Is My King Movement.',
+    setTestimonialsPlaylistId
+  );
+}
+
+async function findOrCreateArtistsPlaylist() {
+  const settings = getSettings();
+  if (settings.artists_playlist_id) return settings.artists_playlist_id;
+  return findOrCreatePlaylist(
+    'Artists',
+    'Artist testimony and feature videos for the Jesus Is My King Movement.',
+    setArtistsPlaylistId
+  );
+}
+
+async function addVideoToArtistsPlaylist(videoId) {
+  const playlistId = await findOrCreateArtistsPlaylist();
+  if (!playlistId) return false;
+  const accessToken = await getValidAccessToken();
+  const body = JSON.stringify({
+    snippet: {
+      playlistId,
+      resourceId: { kind: 'youtube#video', videoId }
+    }
+  });
+  await googleApi('POST',
+    'https://www.googleapis.com/youtube/v3/playlistItems?part=snippet',
+    {
+      Authorization: `Bearer ${accessToken}`,
+      'Content-Type': 'application/json',
+      'Content-Length': Buffer.byteLength(body)
+    },
+    body
+  );
+  return true;
 }
 
 async function addVideoToTestimonialsPlaylist(videoId) {
@@ -402,6 +454,8 @@ module.exports = {
   getConnectionInfo,
   findOrCreateTestimonialsPlaylist,
   addVideoToTestimonialsPlaylist,
+  findOrCreateArtistsPlaylist,
+  addVideoToArtistsPlaylist,
   uploadVideoFromPath,
   setVideoPrivacy,
   deleteVideo,

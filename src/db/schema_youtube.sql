@@ -16,9 +16,14 @@ CREATE TABLE IF NOT EXISTS youtube_oauth_tokens (
 CREATE TABLE IF NOT EXISTS youtube_settings (
   id INTEGER PRIMARY KEY CHECK (id = 1),
   testimonials_playlist_id TEXT,
+  artists_playlist_id TEXT,
   default_visibility TEXT DEFAULT 'unlisted',
   updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
 );
+
+-- Safe upgrade for existing installs (no-op if the column already exists)
+-- (SQLite does not support IF NOT EXISTS on ADD COLUMN; the backend client.js
+--  wraps this in a try/catch so re-runs are harmless.)
 
 INSERT OR IGNORE INTO youtube_settings (id, default_visibility) VALUES (1, 'unlisted');
 

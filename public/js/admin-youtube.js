@@ -2,9 +2,13 @@
 
 /**
  * Admin dashboard panel: YouTube connection + testimony video moderation.
- * Expects elements (added to admin.html) with these IDs:
- *  - ytStatus, ytConnectBtn, ytDisconnectBtn, ytEnsurePlaylistBtn
- *  - ytTestList, ytFilter, ytReloadBtn
+ * Drop-in version: every pending card now also shows
+ *   "Approve & link to QR code(s)"  -> opens the multi-code link panel.
+ *
+ * Expects elements added by admin.html:
+ *   - ytStatus, ytConnectBtn, ytDisconnectBtn, ytEnsurePlaylistBtn
+ *   - ytTestList, ytFilter, ytReloadBtn
+ *   - the link panel (admin-youtube-link-panel.html) and its script
  */
 
 (function () {
@@ -44,7 +48,9 @@
       el.innerHTML =
         '<div style="color:#0a7d2c;font-weight:600">Connected: ' + esc(info.channel_title || '(channel)') + '</div>' +
         '<div style="font-size:12px;color:#555">Default visibility: ' + esc(info.default_visibility) +
-        ' &middot; Testimonials playlist: ' + (info.testimonials_playlist_id ? 'ready' : 'not yet created') + '</div>';
+        ' &middot; Testimonials playlist: ' + (info.testimonials_playlist_id ? 'ready' : 'not yet created') +
+        ' &middot; Artists playlist: ' + (info.artists_playlist_id ? 'ready' : 'not yet created') +
+        '</div>';
     } else {
       el.innerHTML = '<div style="color:#b00020;font-weight:600">Not connected to YouTube yet.</div>';
     }
@@ -105,8 +111,9 @@
             '<iframe src="' + esc(embed) + '" style="position:absolute;inset:0;width:100%;height:100%;border:0" allowfullscreen></iframe>' +
           '</div>' +
           '<div style="display:flex;gap:8px;flex-wrap:wrap">' +
-            '<button data-act="approve" data-id="' + it.id + '" data-pub="0">Approve (keep unlisted)</button>' +
-            (it.permission_public ? '<button data-act="approve" data-id="' + it.id + '" data-pub="1">Approve + make public</button>' : '') +
+            '<button data-act="approve-link" data-id="' + it.id + '" style="background:linear-gradient(135deg,#5a2a82,#b8860b);color:#fff;border:none;padding:10px 14px;border-radius:10px;font-weight:700;cursor:pointer">Approve &amp; link to QR code(s)</button>' +
+            '<button data-act="approve" data-id="' + it.id + '" data-pub="0">Approve only (keep unlisted)</button>' +
+            (it.permission_public ? '<button data-act="approve" data-id="' + it.id + '" data-pub="1">Approve only + make public</button>' : '') +
             '<button data-act="reject" data-id="' + it.id + '">Reject</button>' +
             '<button data-act="reject-delete" data-id="' + it.id + '">Reject + delete from YouTube</button>' +
             '<button data-act="public" data-id="' + it.id + '">Force public</button>' +
@@ -122,7 +129,12 @@
         var act = b.getAttribute('data-act');
         var pub = b.getAttribute('data-pub') === '1';
         var note = '';
-        if (act === 'approve') {
+        if (act === 'approve-link') {
+          // Handled by admin-youtube-link.js, but trigger here too if available
+          if (window.JIMKYouTubeLink && window.JIMKYouTubeLink.open) {
+            window.JIMKYouTubeLink.open(id);
+          }
+        } else if (act === 'approve') {
           api('POST', '/api/admin/youtube/testimonies/' + id + '/approve', { make_public: pub }).then(loadList);
         } else if (act === 'reject') {
           note = prompt('Optional reason for rejection:') || '';

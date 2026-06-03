@@ -1,718 +1,289 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>JIMK Moderation Dashboard</title>
-  <meta name="robots" content="noindex,nofollow" />
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>JIMK Admin Dashboard</title>
   <style>
     :root {
-      --bg:#12071f;
-      --bg-2:#1a0d2f;
-      --panel:#24113d;
-      --panel-2:#2f174f;
-      --panel-3:#3b1f61;
-      --ink:#f8f2ff;
-      --muted:#c9bddc;
-      --line:rgba(240,195,91,.18);
-      --gold:#f0c35b;
-      --gold-2:#c9952b;
-      --purple:#8d5cff;
-      --purple-2:#c2a9ff;
-      --ok:#46b96d;
-      --warn:#f0af49;
-      --bad:#d85c67;
-      --shadow:0 24px 60px rgba(0,0,0,.28);
+      --bg: #f7f4ef; --card: #fff; --ink: #1f1530; --muted: #666;
+      --accent: #5a2a82; --gold: #b8860b; --border: #eaeaea;
+      --ok: #0a7d2c; --err: #b00020;
     }
-    * { box-sizing:border-box; }
-    html { scroll-behavior:smooth; }
-    body {
-      margin:0;
-      font-family:Inter,Arial,sans-serif;
-      background:
-        radial-gradient(circle at top, rgba(141,92,255,.22), transparent 28%),
-        radial-gradient(circle at right, rgba(240,195,91,.12), transparent 24%),
-        linear-gradient(180deg, #1e0c33 0%, #150824 40%, #0e0618 100%);
-      color:var(--ink);
+    * { box-sizing: border-box; }
+    body { margin: 0; background: var(--bg); color: var(--ink);
+           font: 15px/1.5 -apple-system, system-ui, "Inter", sans-serif; }
+    header {
+      background: linear-gradient(135deg, #2a1140 0%, #5a2a82 60%, #b8860b 100%);
+      color: #fff; padding: 28px 22px;
     }
-    h1,h2,h3,h4 { margin:0 0 10px; font-family:Cinzel, Georgia, serif; }
-    p { margin:0; }
-    a { color:#ffe7a8; }
-    .wrap { max-width: 1500px; margin:0 auto; padding:24px; }
-    .hero {
-      display:grid;
-      grid-template-columns: minmax(0,1.35fr) minmax(340px,.85fr);
-      gap:18px;
-      align-items:start;
-      margin-bottom:18px;
-    }
-    .badge {
-      display:inline-flex;
-      padding:7px 12px;
-      border-radius:999px;
-      font-size:12px;
-      letter-spacing:.12em;
-      text-transform:uppercase;
-      color:#ffe7a6;
-      border:1px solid rgba(240,195,91,.34);
-      background:rgba(240,195,91,.08);
-      margin-bottom:12px;
-    }
-    .lede {
-      color:var(--muted);
-      line-height:1.65;
-      max-width:900px;
-    }
+    header .badge { display:inline-block; font-size:12px; padding:3px 10px;
+                    background:rgba(255,255,255,.18); border-radius:999px; margin-bottom:8px; }
+    header h1 { margin: 0 0 4px; font-size: 26px; }
+    header p { margin: 0; opacity: .92; font-size: 14px; max-width: 720px; }
+
+    main { max-width: 1100px; margin: 0 auto; padding: 24px 18px 60px; display: grid; gap: 22px; }
     .panel {
-      background:linear-gradient(180deg, rgba(47,23,79,.95), rgba(27,13,47,.96));
-      border:1px solid var(--line);
-      border-radius:22px;
-      padding:18px;
-      box-shadow:var(--shadow);
-      backdrop-filter: blur(10px);
+      background: var(--card); border: 1px solid var(--border); border-radius: 14px;
+      padding: 18px 18px 20px; box-shadow: 0 6px 20px rgba(20,10,40,.04);
     }
-    .hero-card { min-height: 100%; }
-    .auth-panel .field + .field,
-    .stack > * + * { margin-top:12px; }
-    .grid { display:grid; gap:18px; }
-    .stats { grid-template-columns:repeat(7,minmax(0,1fr)); margin-bottom:18px; }
-    .main { grid-template-columns: minmax(0,1.15fr) minmax(420px,.9fr) minmax(380px,.9fr); align-items:start; }
-    .bottom { grid-template-columns: 1fr 1fr 1fr; margin-top:18px; }
-    .stat .label {
-      color:var(--muted);
-      font-size:11px;
-      letter-spacing:.12em;
-      text-transform:uppercase;
+    .panel h2 { margin: 0 0 4px; font-size: 19px; }
+    .panel .sub { margin: 0 0 14px; color: var(--muted); font-size: 13px; }
+
+    .row { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
+    input[type=text], input[type=password], input[type=email], textarea, select {
+      padding: 10px 12px; border: 1px solid #ddd; border-radius: 10px;
+      font: inherit; background: #fff; min-width: 180px;
     }
-    .stat .value {
-      font-size:30px;
-      font-weight:800;
-      margin-top:8px;
-      color:#fff2cc;
-    }
-    .row, .row-between {
-      display:flex;
-      gap:10px;
-      flex-wrap:wrap;
-      align-items:center;
-    }
-    .row-between { justify-content:space-between; }
-    .field {
-      display:flex;
-      flex-direction:column;
-      gap:7px;
-      min-width:0;
-    }
-    .field-grid {
-      display:grid;
-      grid-template-columns:repeat(2,minmax(0,1fr));
-      gap:12px;
-    }
-    .field.full { grid-column:1 / -1; }
-    label {
-      font-size:12px;
-      letter-spacing:.06em;
-      text-transform:uppercase;
-      color:#e9d7ff;
-    }
-    input, textarea, select, button {
-      font:inherit;
-    }
-    input, textarea, select {
-      width:100%;
-      padding:12px 13px;
-      border-radius:14px;
-      border:1px solid rgba(194,169,255,.18);
-      background:rgba(12,5,24,.78);
-      color:var(--ink);
-      outline:none;
-      transition:.18s ease;
-    }
-    input:focus, textarea:focus, select:focus {
-      border-color: rgba(240,195,91,.55);
-      box-shadow:0 0 0 3px rgba(240,195,91,.10);
-    }
-    textarea { min-height:96px; resize:vertical; }
+    textarea { width: 100%; min-height: 70px; resize: vertical; }
     button {
-      border:0;
-      border-radius:14px;
-      padding:11px 14px;
-      cursor:pointer;
-      transition:.16s ease;
+      padding: 9px 14px; border: 1px solid #ddd; background: #fff; color: var(--ink);
+      border-radius: 10px; cursor: pointer; font: inherit; font-weight: 600;
+      transition: transform .1s, box-shadow .1s, background .15s;
     }
-    button:hover { transform:translateY(-1px); }
-    button:disabled { opacity:.5; cursor:not-allowed; transform:none; }
-    .btn {
-      background:#301a4a;
-      color:#fff;
-      border:1px solid rgba(194,169,255,.22);
+    button:hover { background: #faf6ff; }
+    button.primary {
+      background: linear-gradient(135deg, var(--accent), var(--gold));
+      color: #fff; border: none;
     }
-    .btn.primary {
-      background:linear-gradient(135deg, var(--gold), var(--gold-2));
-      color:#311a00;
-      font-weight:800;
-      border-color:transparent;
-    }
-    .btn.ok { background:linear-gradient(135deg, #45b96d, #2f9554); color:#fff; }
-    .btn.warn { background:linear-gradient(135deg, #efb24f, #d28c18); color:#2f1800; font-weight:700; }
-    .btn.bad { background:linear-gradient(135deg, #d85c67, #b63e48); color:#fff; }
-    .btn.ghost { background:transparent; color:var(--ink); }
-    .btn.sm { padding:8px 10px; font-size:13px; border-radius:12px; }
-    .pill {
-      display:inline-flex;
-      align-items:center;
-      justify-content:center;
-      padding:4px 10px;
-      border-radius:999px;
-      font-size:12px;
-      border:1px solid rgba(240,195,91,.18);
-      background:rgba(255,255,255,.05);
-      color:#ffe8b0;
-      white-space:nowrap;
-    }
-    .pill.pending { background:rgba(240,175,73,.16); color:#ffd48d; }
-    .pill.approved { background:rgba(70,185,109,.18); color:#b8f7ca; }
-    .pill.rejected { background:rgba(216,92,103,.18); color:#ffcad0; }
-    .pill.merged { background:rgba(141,92,255,.16); color:#ded0ff; }
-    .muted, .note, .small { color:var(--muted); }
-    .note { font-size:13px; line-height:1.55; }
-    .small { font-size:12px; }
-    .ok-text { color:#bff8cf; }
-    .danger-text { color:#ffc7cf; }
-    .toolbar { margin-bottom:14px; }
-    .toolbar .field { flex:1 1 180px; }
-    .list {
-      display:grid;
-      gap:10px;
-      max-height:820px;
-      overflow:auto;
-      padding-right:4px;
-    }
-    .card {
-      background:linear-gradient(180deg, rgba(61,31,99,.9), rgba(32,16,54,.96));
-      border:1px solid rgba(240,195,91,.14);
-      border-radius:16px;
-      padding:14px;
-    }
-    .queue-card.selected, .owner-card.selected { outline:2px solid rgba(240,195,91,.55); }
-    .queue-card > button, .owner-card > button {
-      all:unset;
-      display:block;
-      width:100%;
-      cursor:pointer;
-    }
-    .queue-meta, .owner-meta {
-      font-size:13px;
-      color:var(--muted);
-      line-height:1.5;
-      margin-top:6px;
-    }
-    .code {
-      display:inline-block;
-      padding:4px 8px;
-      border-radius:10px;
-      background:#130a23;
-      border:1px solid rgba(194,169,255,.14);
-      font-size:12px;
-      font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-      word-break:break-all;
-    }
-    .empty {
-      padding:22px;
-      border-radius:16px;
-      border:1px dashed rgba(240,195,91,.18);
-      color:var(--muted);
-      text-align:center;
-    }
-    .pagination {
-      display:flex;
-      justify-content:space-between;
-      gap:10px;
-      align-items:center;
-      margin-top:14px;
-    }
-    .checkbox-row {
-      display:flex;
-      gap:10px;
-      align-items:flex-start;
-    }
-    .checkbox-row input { width:auto; margin-top:3px; }
-    .submission-actions, .owner-actions {
-      display:flex;
-      gap:10px;
-      flex-wrap:wrap;
-      margin-top:14px;
-    }
-    .divider {
-      height:1px;
-      background:rgba(255,255,255,.08);
-      margin:14px 0;
-    }
-    .sticky {
-      position:sticky;
-      top:20px;
-    }
-    .audit-list {
-      max-height:340px;
-      overflow:auto;
-    }
-    .audit-item {
-      padding:11px 0;
-      border-bottom:1px solid rgba(255,255,255,.08);
-    }
-    .audit-item:last-child { border-bottom:0; }
-    .workflow-list {
-      margin:0;
-      padding-left:18px;
-      color:var(--muted);
-      line-height:1.65;
-      display:grid;
-      gap:6px;
-    }
-    .hint-box {
-      padding:12px 14px;
-      border-radius:16px;
-      background:rgba(240,195,91,.07);
-      border:1px solid rgba(240,195,91,.18);
-      color:#ffe7b0;
-      line-height:1.55;
-      font-size:13px;
-    }
-    @media (max-width: 1320px) {
-      .stats { grid-template-columns: repeat(4, 1fr); }
-      .main { grid-template-columns: 1fr; }
-      .bottom { grid-template-columns: 1fr; }
-      .sticky { position:static; }
-      .hero { grid-template-columns: 1fr; }
-    }
-    @media (max-width: 820px) {
-      .stats, .field-grid { grid-template-columns: 1fr; }
-      h1 { font-size:32px; }
-      .wrap { padding:16px; }
-    }
+    button.primary:hover { box-shadow: 0 6px 18px rgba(90,42,130,.25); }
+    button.danger { color: var(--err); border-color: var(--err); background: #fff; }
+
+    .pill { display: inline-block; font-size: 12px; padding: 2px 8px;
+            border-radius: 8px; background: #eee; color: #333; }
+    .stat-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 10px; }
+    .stat { background: #faf6ff; border: 1px solid #eee; border-radius: 10px;
+            padding: 10px 12px; }
+    .stat .label { font-size: 12px; color: var(--muted); }
+    .stat .value { font-size: 22px; font-weight: 700; }
+
+    .status-line { margin-top: 8px; font-size: 13px; }
+    .status-line.ok  { color: var(--ok); }
+    .status-line.err { color: var(--err); }
+
+    code, .mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
   </style>
 </head>
 <body>
-  <div class="wrap">
-    <section class="hero">
-      <div class="panel hero-card">
-        <div class="badge">Jesus Is My King Movement · Admin</div>
-        <h1>Moderation Dashboard</h1>
-        <p class="lede">Review, approve, reject, merge, search, and organize a large number of testimony submissions from one place. This dashboard is built for high-volume moderation with a queue, notes, server-side search, filters, pagination, owner lookup, bulk actions, and audit history.</p>
-        <div class="divider"></div>
-        <div class="hint-box">Tip: keep new testimony item codes pointing to the founder by default, then approve or merge submissions when you are ready. That way every QR works even before a person is reviewed.</div>
-      </div>
-      <div class="panel auth-panel">
-        <div class="field">
-          <label>Admin API key</label>
-          <input id="adminKey" type="password" placeholder="Enter x-admin-key" />
-        </div>
-        <div class="row" style="margin-top:12px">
-          <button class="btn primary" id="saveKeyBtn">Save key</button>
-          <button class="btn ghost" id="reloadAllBtn">Reload</button>
-        </div>
-        <p class="note" id="statusNote">Enter your admin key to load moderation data.</p>
-      </div>
-    </section>
-<section class="admin-panel" style="margin-top:24px;padding:18px;border:1px solid #eee;border-radius:14px;background:#fff">
-  <h2 style="margin:0 0 6px">YouTube — Testimony Videos</h2>
-  <p style="margin:0 0 12px;color:#555;font-size:14px">
-    Connect the ministry YouTube channel. New phone uploads go straight to YouTube as <strong>Unlisted</strong> and into the <strong>Testimonials</strong> playlist. You can approve or reject below.
-  </p>
 
-  <div id="ytStatus" style="margin-bottom:12px;padding:10px 12px;background:#faf6ff;border-radius:10px"></div>
+<header>
+  <div class="badge">Jesus Is My King Movement · Admin</div>
+  <h1>Moderation Dashboard</h1>
+  <p>Connect YouTube, review submitted testimonies, link them to QR codes, manage artists, and import new item codes — all in one place.</p>
+</header>
 
-  <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:18px">
-    <button id="ytConnectBtn">Connect YouTube</button>
-    <button id="ytDisconnectBtn">Disconnect</button>
-    <button id="ytEnsurePlaylistBtn">Create / find Testimonials playlist</button>
-  </div>
+<main>
 
-  <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:10px">
-    <label for="ytFilter" style="font-weight:600">Show:</label>
-    <select id="ytFilter">
-      <option value="pending" selected>Pending</option>
-      <option value="approved">Approved</option>
-      <option value="rejected">Rejected</option>
-      <option value="all">All</option>
-    </select>
-    <button id="ytReloadBtn">Reload</button>
-  </div>
-
-  <div id="ytTestList"></div>
-</section>
-
-<script src="js/admin-youtube.js"></script>    <section class="grid stats">
-      <div class="panel stat"><div class="label">Pending</div><div class="value" id="statPending">0</div></div>
-      <div class="panel stat"><div class="label">Approved new</div><div class="value" id="statApprovedNew">0</div></div>
-      <div class="panel stat"><div class="label">Merged</div><div class="value" id="statMerged">0</div></div>
-      <div class="panel stat"><div class="label">Rejected</div><div class="value" id="statRejected">0</div></div>
-      <div class="panel stat"><div class="label">Active owners</div><div class="value" id="statOwners">0</div></div>
-      <div class="panel stat"><div class="label">Claimed codes</div><div class="value" id="statClaimed">0</div></div>
-      <div class="panel stat"><div class="label">Founder default codes</div><div class="value" id="statDefaultCodes">0</div></div>
-    </section>
-
-    <section class="grid main">
-      <div class="panel">
-        <div class="row-between">
-          <h2>Moderation Queue</h2>
-          <span class="pill" id="queuePill">0 results</span>
-        </div>
-        <div class="grid toolbar">
-          <div class="row">
-            <div class="field" style="flex:2 1 320px">
-              <label>Search submissions</label>
-              <input id="submissionQuery" type="text" placeholder="Name, email, city, quote, item code" />
-            </div>
-            <div class="field" style="width:180px">
-              <label>Status</label>
-              <select id="submissionStatus">
-                <option value="pending">pending</option>
-                <option value="all">all</option>
-                <option value="approved_new_owner">approved_new_owner</option>
-                <option value="merged_to_existing">merged_to_existing</option>
-                <option value="rejected">rejected</option>
-              </select>
-            </div>
-            <div class="field" style="width:120px">
-              <label>Page size</label>
-              <select id="submissionPageSize">
-                <option>10</option>
-                <option selected>20</option>
-                <option>50</option>
-                <option>100</option>
-              </select>
-            </div>
-            <div class="field" style="width:120px">
-              <label>&nbsp;</label>
-              <button class="btn primary" id="applySubmissionFiltersBtn">Apply</button>
-            </div>
-          </div>
-          <div class="row-between">
-            <div class="row">
-              <button class="btn sm ghost" id="selectAllVisibleBtn">Select page</button>
-              <button class="btn sm bad" id="bulkRejectBtn">Bulk reject</button>
-              <span class="note" id="selectedCountLabel">0 selected</span>
-            </div>
-            <span class="small" id="submissionRangeLabel">Showing 0–0</span>
-          </div>
-        </div>
-        <div class="list" id="submissionList"></div>
-        <div class="pagination">
-          <button class="btn ghost" id="submissionPrevBtn">← Prev</button>
-          <span class="small" id="submissionPageLabel">Page 1 of 1</span>
-          <button class="btn ghost" id="submissionNextBtn">Next →</button>
-        </div>
-      </div>
-
-      <div class="panel sticky">
-        <div class="row-between">
-          <h2>Submission Review</h2>
-          <span class="pill" id="reviewStatusPill">No submission selected</span>
-        </div>
-        <div id="submissionReview" class="stack">
-          <div class="empty">Choose a submission from the queue to review the full details, save notes, approve it, merge it into an existing owner, or reject it.</div>
-        </div>
-      </div>
-
-      <div class="panel sticky">
-        <div class="row-between">
-          <h2>Owner Search & Merge</h2>
-          <span class="pill" id="ownerPill">0 owners</span>
-        </div>
-        <div class="row">
-          <div class="field" style="flex:1 1 220px">
-            <label>Search owners</label>
-            <input id="ownerQuery" type="text" placeholder="Name, email, slug, item code" />
-          </div>
-          <div class="field" style="width:160px">
-            <label>Owner status</label>
-            <select id="ownerStatusFilter">
-              <option value="all">all</option>
-              <option value="active">active</option>
-              <option value="hidden">hidden</option>
-              <option value="archived">archived</option>
-            </select>
-          </div>
-          <div class="field" style="width:120px">
-            <label>Page size</label>
-            <select id="ownerPageSize">
-              <option>5</option>
-              <option selected>10</option>
-              <option>20</option>
-            </select>
-          </div>
-        </div>
-        <div class="list" id="ownerList" style="margin-top:12px;max-height:300px"></div>
-        <div class="pagination">
-          <button class="btn ghost" id="ownerPrevBtn">← Prev</button>
-          <span class="small" id="ownerPageLabel">Page 1 of 1</span>
-          <button class="btn ghost" id="ownerNextBtn">Next →</button>
-        </div>
-        <div class="divider"></div>
-        <h3>Owner draft / editor</h3>
-        <div class="field-grid">
-          <div class="field"><label>Owner ID</label><input id="ownerId" type="text" readonly /></div>
-          <div class="field"><label>Slug</label><input id="ownerSlug" type="text" placeholder="jordan-m" /></div>
-          <div class="field"><label>Display name</label><input id="ownerDisplayName" type="text" placeholder="Jordan M." /></div>
-          <div class="field"><label>Email</label><input id="ownerEmail" type="email" placeholder="owner@email.com" /></div>
-          <div class="field"><label>Location</label><input id="ownerLocation" type="text" placeholder="Dallas, TX" /></div>
-          <div class="field"><label>Status</label><select id="ownerStatus"><option value="active">active</option><option value="hidden">hidden</option><option value="archived">archived</option></select></div>
-          <div class="field full"><label>Item codes</label><textarea id="ownerItemCodes" placeholder="JIMK-SHARE-001&#10;JIMK-SHARE-007"></textarea></div>
-          <div class="field full"><label>Public video URL</label><input id="ownerPublicVideoUrl" type="url" placeholder="https://www.youtube.com/shorts/..." /></div>
-          <div class="field full"><label>Embed video URL</label><input id="ownerEmbedVideoUrl" type="url" placeholder="https://www.youtube.com/embed/..." /></div>
-          <div class="field full"><label>Short quote</label><input id="ownerShortQuote" type="text" placeholder="One short line for previews" /></div>
-          <div class="field full"><label>Summary</label><textarea id="ownerSummary" placeholder="Longer testimony summary"></textarea></div>
-          <div style="border:1px solid #eee;border-radius:14px;padding:14px;margin-top:16px;background:#fff">
-  <h3 style="margin:0 0 6px">Upload artist video to YouTube</h3>
-  <p style="margin:0 0 12px;color:#555;font-size:13px">
-    Goes to the connected ministry channel as <strong>Unlisted</strong> and is added to the <strong>Artists</strong> playlist. Check the box to make it public on the channel.
-  </p>
-
-  <div style="display:grid;gap:10px;grid-template-columns:1fr;max-width:520px">
-    <label style="font-weight:600;font-size:14px">
-      Video file
-      <input type="file" id="artistYtFile" accept="video/*" style="display:block;margin-top:6px" />
-    </label>
-
-    <label style="font-weight:600;font-size:14px">
-      Title (optional — defaults to "<artist name> — Testimony")
-      <input type="text" id="artistYtTitle" placeholder="Optional video title"
-             style="display:block;width:100%;padding:10px 12px;border:1px solid #ddd;border-radius:10px;margin-top:6px" />
-    </label>
-
-    <label style="display:flex;gap:8px;align-items:flex-start;font-size:14px">
-      <input type="checkbox" id="artistYtMakePublic" style="margin-top:4px" />
-      <span>Make this video public on the YouTube channel (requires the artist's permission).</span>
-    </label>
-
-    <button id="artistYtUploadBtn" type="button"
-      style="padding:12px 18px;border:none;border-radius:12px;background:linear-gradient(135deg,#5a2a82,#b8860b);color:#fff;font-weight:700;cursor:pointer">
-      Upload to YouTube
-    </button>
-<div style="border:1px solid #eee;border-radius:14px;padding:16px;margin-top:16px;background:#fff">
-  <h3 style="margin:0 0 6px">Artist testimony video</h3>
-  <p style="margin:0 0 12px;color:#555;font-size:13px">
-    Upload the artist's testimony video here. It goes to the ministry YouTube channel as <strong>Unlisted</strong>, is added to the <strong>Artists</strong> playlist, and becomes the video shown on this artist's page. Uploading a new one replaces the previous one.
-  </p>
-
-  <!-- Current video preview (filled in by admin-artists.js when an artist is opened) -->
-  <div id="artistYtCurrentWrap" style="margin-bottom:14px;display:none">
-    <div style="font-weight:600;font-size:13px;margin-bottom:6px">Current video on artist page</div>
-    <div style="position:relative;padding-top:56.25%;border-radius:10px;overflow:hidden;background:#000;max-width:520px">
-      <iframe id="artistYtCurrentFrame" src="" allowfullscreen
-        style="position:absolute;inset:0;width:100%;height:100%;border:0"></iframe>
+  <!-- ============ AUTH ============ -->
+  <section class="panel" id="authPanel">
+    <h2>Admin key</h2>
+    <p class="sub">Enter your admin API key once. It is stored in this browser only.</p>
+    <div class="row">
+      <input type="password" id="adminKey" placeholder="Admin API key" style="flex:1;min-width:240px" />
+      <button class="primary" id="saveKeyBtn">Save key</button>
+      <button id="reloadAllBtn">Reload</button>
     </div>
-    <div style="margin-top:8px">
-      <button type="button" id="artistYtRemoveBtn"
-        style="padding:8px 14px;border:1px solid #b00020;background:#fff;color:#b00020;border-radius:10px;font-weight:600;cursor:pointer">
-        Remove video from artist page
-      </button>
+    <div class="status-line" id="authStatus">Enter your admin key to use the dashboard.</div>
+  </section>
+
+  <!-- ============ STATS ============ -->
+  <section class="panel">
+    <h2>Overview</h2>
+    <div class="stat-grid" id="statsGrid">
+      <div class="stat"><div class="label">Pending submissions</div><div class="value" id="statPending">0</div></div>
+      <div class="stat"><div class="label">Approved new</div><div class="value" id="statApproved">0</div></div>
+      <div class="stat"><div class="label">Active owners</div><div class="value" id="statOwners">0</div></div>
+      <div class="stat"><div class="label">Item codes assigned</div><div class="value" id="statAssigned">0</div></div>
+      <div class="stat"><div class="label">Founder default codes</div><div class="value" id="statDefault">0</div></div>
     </div>
-  </div>
+  </section>
 
-  <!-- Hidden fields the rest of the admin code can still read, but no longer typed in by hand -->
-  <input type="hidden" id="publicVideoUrl" />
-  <input type="hidden" id="embedVideoUrl" />
+  <!-- ============ YOUTUBE PANEL ============ -->
+  <section class="panel">
+    <h2>YouTube — Testimony Videos</h2>
+    <p class="sub">Direct phone uploads from the movement page land here as <strong>Unlisted</strong> and added to the <strong>Testimonials</strong> playlist. Use <strong>Approve &amp; link to QR code(s)</strong> to attach one or many codes to a video.</p>
 
-  <!-- Upload controls -->
-  <div style="display:grid;gap:10px;grid-template-columns:1fr;max-width:520px;margin-top:6px">
-    <label style="font-weight:600;font-size:14px">
-      Choose video file
-      <input type="file" id="artistYtFile" accept="video/*" style="display:block;margin-top:6px" />
+    <div id="ytStatus" style="margin:8px 0 12px;padding:10px 12px;background:#faf6ff;border-radius:10px"></div>
+
+    <div class="row" style="margin-bottom:14px">
+      <button class="primary" id="ytConnectBtn">Connect YouTube</button>
+      <button id="ytDisconnectBtn">Disconnect</button>
+      <button id="ytEnsurePlaylistBtn">Create / find playlists</button>
+    </div>
+
+    <div class="row" style="margin-bottom:10px">
+      <label for="ytFilter" style="font-weight:600">Show:</label>
+      <select id="ytFilter">
+        <option value="pending" selected>Pending</option>
+        <option value="approved">Approved</option>
+        <option value="rejected">Rejected</option>
+        <option value="all">All</option>
+      </select>
+      <button id="ytReloadBtn">Reload list</button>
+    </div>
+
+    <div id="ytTestList"></div>
+  </section>
+
+  <!-- ============ ARTISTS ============ -->
+  <section class="panel">
+    <h2>Artists</h2>
+    <p class="sub">Manage artist profiles, upload artwork (HEIC supported), and upload the artist's testimony video (goes to YouTube under the <strong>Artists</strong> playlist and becomes the video shown on the artist page).</p>
+
+    <div class="row" style="margin-bottom:12px">
+      <input type="text" id="artistSearch" placeholder="Search artists..." />
+      <select id="artistStatusFilter">
+        <option value="all">All statuses</option>
+        <option value="active">Active</option>
+        <option value="hidden">Hidden</option>
+        <option value="archived">Archived</option>
+      </select>
+      <button id="artistReloadBtn">Reload artists</button>
+      <button class="primary" id="artistNewBtn">+ New artist</button>
+    </div>
+
+    <div style="display:grid;gap:16px;grid-template-columns:300px 1fr">
+      <div id="artistList" style="min-height:200px"></div>
+
+      <div id="artistEditor" style="background:#fafafa;border:1px solid #eee;border-radius:12px;padding:16px">
+        <p style="color:#666;font-size:14px;margin:0">Choose an artist on the left to edit.</p>
+
+        <!-- Hidden id holder used by the artist YouTube upload script -->
+        <input type="hidden" id="artistId" />
+
+        <!-- Artist core fields are rendered into here by admin-artists.js -->
+        <div id="artistEditorBody"></div>
+
+        <!-- Artist testimony video (uploaded to YouTube; replaces old URL fields) -->
+        <div id="artistYoutubeMount"></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ ITEM CODES ============ -->
+  <section class="panel">
+    <h2>Bulk Item Code Import</h2>
+    <p class="sub">Paste one code per line (for example <span class="mono">JIMK-SHARE-0001</span>). Imported codes start unassigned and show the founder default story until linked to a person.</p>
+    <textarea id="codesImportText" placeholder="JIMK-SHARE-0001&#10;JIMK-SHARE-0002&#10;JIMK-SHARE-0003"></textarea>
+    <div class="row" style="margin-top:10px">
+      <button class="primary" id="importCodesBtn">Import item codes</button>
+      <span class="status-line" id="importCodesStatus"></span>
+    </div>
+  </section>
+
+  <!-- ============ FOUNDER DEFAULT ============ -->
+  <section class="panel">
+    <h2>Founder Default</h2>
+    <p class="sub">Shown for any QR code that has not been linked to a person yet.</p>
+    <div class="row" style="flex-wrap:wrap">
+      <input type="text" id="founderName" placeholder="Display name" style="flex:1" />
+      <input type="text" id="founderVideo" placeholder="YouTube video URL" style="flex:1" />
+    </div>
+    <div class="row" style="margin-top:10px">
+      <input type="text" id="founderQuote" placeholder="Short quote" style="flex:1" />
+    </div>
+    <textarea id="founderSummary" placeholder="Testimony summary" style="margin-top:10px"></textarea>
+    <div class="row" style="margin-top:10px">
+      <button class="primary" id="saveFounderBtn">Save founder default</button>
+      <span class="status-line" id="founderStatus"></span>
+    </div>
+  </section>
+
+  <!-- ============ AUDIT ============ -->
+  <section class="panel">
+    <h2>Recent Audit</h2>
+    <div class="row" style="margin-bottom:10px">
+      <button id="reloadAuditBtn">Reload audit</button>
+    </div>
+    <div id="auditList"></div>
+  </section>
+
+</main>
+
+<!-- Multi-code "Approve & link" popup (hidden until opened) -->
+<div id="ytLinkPanel" style="display:none;position:fixed;inset:0;background:rgba(20,10,40,.55);
+     z-index:9999;align-items:flex-start;justify-content:center;padding:24px;overflow-y:auto">
+  <div style="background:#fff;max-width:680px;width:100%;border-radius:16px;padding:22px 22px 18px;
+              box-shadow:0 24px 60px rgba(0,0,0,.25);display:flex;flex-direction:column;gap:14px">
+    <div style="display:flex;align-items:center;justify-content:space-between;gap:8px">
+      <h3 style="margin:0">Approve &amp; link testimony to QR code(s)</h3>
+      <button id="ytLinkCloseBtn" type="button">Close</button>
+    </div>
+
+    <input type="hidden" id="ytLinkSubId" />
+
+    <div id="ytLinkSummary" style="background:#faf6ff;border-radius:12px;padding:12px"></div>
+
+    <div style="border:1px solid #eee;border-radius:12px;padding:12px;background:#fff">
+      <div style="font-weight:700;margin-bottom:6px">Video to use</div>
+      <label style="display:flex;align-items:flex-start;gap:8px;font-size:14px;margin-bottom:6px">
+        <input type="checkbox" id="ytLinkUseReuse" />
+        <span>Use this person's existing approved video instead of the new upload<br>
+          <span id="ytLinkReuseHint" style="font-size:12px;color:#777"></span>
+        </span>
+      </label>
+      <select id="ytLinkReuseSelect" style="width:100%"></select>
+    </div>
+
+    <div style="border:1px solid #eee;border-radius:12px;padding:12px;background:#fff">
+      <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:6px">
+        <div style="font-weight:700">Attach to QR code(s)</div>
+        <input type="text" id="ytLinkCodeFilter" placeholder="Filter codes..." style="width:180px" />
+      </div>
+      <div style="font-size:12px;color:#666;margin-bottom:8px">
+        Tick every QR code that should lead to this video. You can pick more than one — handy if the person bought multiple shirts.
+      </div>
+      <div id="ytLinkCodeList" style="max-height:260px;overflow:auto;padding-right:4px"></div>
+    </div>
+
+    <label style="display:flex;align-items:flex-start;gap:8px;font-size:14px">
+      <input type="checkbox" id="ytLinkMakePublic" />
+      <span>Make this video public on the YouTube channel (only if the submitter gave permission).</span>
     </label>
 
-    <label style="font-weight:600;font-size:14px">
-      Title (optional — defaults to "<artist name> — Testimony")
-      <input type="text" id="artistYtTitle" placeholder="Optional video title"
-             style="display:block;width:100%;padding:10px 12px;border:1px solid #ddd;border-radius:10px;margin-top:6px" />
+    <label style="font-size:13px;font-weight:600">
+      Notes (optional)
+      <textarea id="ytLinkNotes" rows="2"></textarea>
     </label>
 
-    <label style="display:flex;gap:8px;align-items:flex-start;font-size:14px">
-      <input type="checkbox" id="artistYtMakePublic" style="margin-top:4px" />
-      <span>Make this video public on the YouTube channel (only check if the artist gave permission).</span>
-    </label>
-
-    <button id="artistYtUploadBtn" type="button"
-      style="padding:12px 18px;border:none;border-radius:12px;background:linear-gradient(135deg,#5a2a82,#b8860b);color:#fff;font-weight:700;cursor:pointer">
-      Upload &amp; set as artist testimony video
+    <button id="ytLinkConfirmBtn" type="button" class="primary" style="padding:12px 18px;border:none;border-radius:12px;font-size:15px">
+      Approve &amp; link
     </button>
 
-    <div id="artistYtProgress" style="display:none;height:8px;background:#eee;border-radius:8px;overflow:hidden">
-      <div style="height:100%;width:0;background:#5a2a82;transition:width .2s"></div>
-    </div>
-
-    <div id="artistYtStatus" style="font-weight:600;font-size:14px"></div>
+    <div id="ytLinkStatus" style="font-weight:600;font-size:14px"></div>
   </div>
 </div>
 
+<!-- Scripts -->
+<script>
+  // Centralized admin key handling shared by all admin scripts
+  (function () {
+    var keyInput = document.getElementById('adminKey');
+    var status = document.getElementById('authStatus');
+    var saved = localStorage.getItem('jimk_admin_key') || '';
+    if (saved) keyInput.value = saved;
+
+    function save() {
+      var v = keyInput.value.trim();
+      localStorage.setItem('jimk_admin_key', v);
+      status.textContent = v ? 'Admin key saved in this browser.' : 'Admin key cleared.';
+      status.className = 'status-line ' + (v ? 'ok' : 'err');
+      // Trigger reloads in any panel that listens
+      var ev = new Event('jimk:key-changed');
+      document.dispatchEvent(ev);
+    }
+    document.getElementById('saveKeyBtn').addEventListener('click', save);
+    document.getElementById('reloadAllBtn').addEventListener('click', function () {
+      var ev = new Event('jimk:reload-all'); document.dispatchEvent(ev);
+    });
+  })();
+</script>
+
+<script src="js/admin.js"></script>
+<script src="js/admin-artists.js"></script>
 <script src="js/admin-artist-youtube.js"></script>
-    <div id="artistYtProgress" style="display:none;height:8px;background:#eee;border-radius:8px;overflow:hidden">
-      <div style="height:100%;width:0;background:#5a2a82;transition:width .2s"></div>
-    </div>
+<script src="js/admin-youtube.js"></script>
+<script src="js/admin-youtube-link.js"></script>
 
-    <div id="artistYtStatus" style="font-weight:600;font-size:14px"></div>
-  </div>
-</div>
-
-<script src="js/admin-artist-youtube.js"></script>
-        </div>
-        <div class="field" style="margin-top:12px">
-          <label><input id="replaceOwnerVideoToggle" type="checkbox" style="width:auto;margin-right:8px" />Replace selected owner video/details when merging</label>
-        </div>
-        <div class="submission-actions">
-          <button class="btn primary" id="saveOwnerBtn">Save owner</button>
-          <button class="btn ok" id="approveNewOwnerBtn">Approve as new owner</button>
-          <button class="btn warn" id="mergeIntoOwnerBtn">Merge into selected owner</button>
-          <button class="btn ghost" id="clearOwnerDraftBtn">Clear draft</button>
-        </div>
-        <p class="note" id="ownerHint">Select a submission to prefill a new owner draft, or select an existing owner to merge the submission into that owner.</p>
-      </div>
-    </section>
-
-    <section class="grid bottom">
-      <div class="panel">
-        <h2>Founder Default</h2>
-        <p class="note">Every unclaimed testimony QR points here until a person is approved.</p>
-        <div class="field-grid">
-          <div class="field full"><label>Display name</label><input id="founderName" type="text" /></div>
-          <div class="field full"><label>Public video URL</label><input id="founderPublicVideoUrl" type="url" /></div>
-          <div class="field full"><label>Embed video URL</label><input id="founderEmbedVideoUrl" type="url" /></div>
-          <div class="field full"><label>Short quote</label><input id="founderShortQuote" type="text" /></div>
-          <div class="field full"><label>Summary</label><textarea id="founderSummary"></textarea></div>
-          <div class="field full"><label>Site base URL</label><input id="siteBaseUrl" type="url" placeholder="https://www.jesusismykingmovement.com" /></div>
-        </div>
-        <div class="submission-actions"><button class="btn primary" id="saveFounderBtn">Save founder default</button></div>
-      </div>
-
-      <div class="panel">
-        <h2>Bulk Item Code Import</h2>
-        <p class="note">Add newly printed testimony QR codes in batches so the system can handle large submission waves without manual code setup one by one.</p>
-        <div class="field"><label>Item codes</label><textarea id="bulkItemCodes" placeholder="JIMK-SHARE-501&#10;JIMK-SHARE-502&#10;JIMK-SHARE-503"></textarea></div>
-        <div class="submission-actions"><button class="btn primary" id="importItemCodesBtn">Import item codes</button></div>
-        <div class="divider"></div>
-        <h3>Moderation workflow</h3>
-        <ol class="workflow-list">
-          <li>Open the queue and filter by pending, approved, merged, or rejected.</li>
-          <li>Search by name, email, city, quote, or item code.</li>
-          <li>Open a submission, save notes, then approve, merge, or reject.</li>
-          <li>Use owner search to avoid duplicate profiles before approval.</li>
-          <li>Use bulk reject for spam or duplicate batches.</li>
-        </ol>
-      </div>
-
-      <div class="panel">
-        <div class="row-between">
-          <h2>Recent Audit</h2>
-          <button class="btn sm ghost" id="reloadAuditBtn">Reload</button>
-        </div>
-        <div class="audit-list" id="auditList"></div>
-      </div>
-    </section>
-
-    <section class="grid" style="grid-template-columns: minmax(0,420px) minmax(0,1fr); gap:18px; margin-top:18px;">
-      <div class="panel sticky">
-        <div class="row-between">
-          <h2>Artists</h2>
-          <span class="pill" id="artistPill">0 artists</span>
-        </div>
-        <p class="note">Each artist gets their own landing page at <code>/artist.html?artist=slug</code>. Use this to make their QR code go straight to that page.</p>
-        <div class="row" style="margin-top:10px">
-          <div class="field" style="flex:1 1 200px">
-            <label>Search artists</label>
-            <input id="artistQuery" type="text" placeholder="Name, slug, location" />
-          </div>
-          <div class="field" style="width:130px">
-            <label>Status</label>
-            <select id="artistStatusFilter">
-              <option value="all">all</option>
-              <option value="active" selected>active</option>
-              <option value="hidden">hidden</option>
-              <option value="archived">archived</option>
-            </select>
-          </div>
-        </div>
-        <div class="list" id="artistList" style="margin-top:12px;max-height:520px"></div>
-        <div class="submission-actions" style="margin-top:12px">
-          <button class="btn primary" id="newArtistBtn">+ New artist</button>
-          <button class="btn ghost" id="reloadArtistsBtn">Reload</button>
-        </div>
-      </div>
-
-      <div class="panel">
-        <div class="row-between">
-          <h2>Artist Editor</h2>
-          <span class="pill" id="artistEditorPill">No artist selected</span>
-        </div>
-        <p class="note" id="artistQrHint">Pick an artist on the left to edit them. The QR URL for the selected artist will show here.</p>
-        <div class="field-grid" style="margin-top:8px">
-          <div class="field"><label>Artist ID</label><input id="artistId" type="text" readonly /></div>
-          <div class="field"><label>Slug (used in QR URL)</label><input id="artistSlug" type="text" placeholder="artist-one" /></div>
-          <div class="field"><label>Display name</label><input id="artistDisplayName" type="text" placeholder="Artist One" /></div>
-          <div class="field"><label>Location</label><input id="artistLocation" type="text" placeholder="Brooklyn, NY" /></div>
-          <div class="field"><label>Medium</label><input id="artistMedium" type="text" placeholder="Ink &amp; Watercolor" /></div>
-          <div class="field"><label>Joined label</label><input id="artistJoined" type="text" placeholder="Joined Jan 2025" /></div>
-          <div class="field"><label>Status</label><select id="artistStatus"><option value="active">active</option><option value="hidden">hidden</option><option value="archived">archived</option></select></div>
-          <div class="field"><label>Public testimony video URL</label><input id="artistPublicVideoUrl" type="url" placeholder="https://www.youtube.com/watch?v=..." /></div>
-          <div class="field full"><label>Embed video URL (auto-filled)</label><input id="artistEmbedVideoUrl" type="url" placeholder="https://www.youtube.com/embed/..." /></div>
-          <div class="field full"><label>Short quote</label><input id="artistShortQuote" type="text" placeholder="One short line for previews" /></div>
-          <div class="field full"><label>Bio</label><textarea id="artistBio" placeholder="Artist bio"></textarea></div>
-          <div class="field full"><label>Testimony summary</label><textarea id="artistTestimony" placeholder="What Jesus has done in their life"></textarea></div>
-        </div>
-        <div class="submission-actions">
-          <button class="btn primary" id="saveArtistBtn">Save artist</button>
-          <button class="btn ghost" id="clearArtistBtn">Clear form</button>
-        </div>
-
-        <div class="divider"></div>
-        <h3>Artist portrait (face/photo of the artist)</h3>
-        <p class="note">Optional. Upload a portrait of the artist. You can choose whether to use it as the hero image at the top of the artist page. The portrait will NOT appear in the public art gallery.</p>
-        <div class="row" style="margin-top:10px;align-items:flex-end;gap:14px;flex-wrap:wrap">
-          <div id="artistPortraitPreview" style="width:120px;height:120px;border-radius:60px;background:#1a0d2f;border:1px solid rgba(255,255,255,.1);display:flex;align-items:center;justify-content:center;color:rgba(255,255,255,.4);font-size:12px;flex-shrink:0">No portrait</div>
-          <div class="field" style="flex:1 1 220px;min-width:200px">
-            <label>Upload artist portrait (JPG, PNG, WebP, HEIC — up to 25MB)</label>
-            <input id="artistPortraitFile" type="file" accept="image/*,.heic,.heif" />
-          </div>
-          <div class="field" style="width:auto">
-            <label class="checkbox-row"><input id="artistPortraitSetHero" type="checkbox" /> Use as hero image</label>
-          </div>
-          <div class="field" style="width:140px">
-            <label>&nbsp;</label>
-            <button class="btn primary" id="uploadPortraitBtn">Upload portrait</button>
-          </div>
-        </div>
-        <div class="row" style="margin-top:10px;gap:8px;flex-wrap:wrap">
-          <button class="btn sm ghost" id="portraitUseAsHeroBtn">Use portrait as hero</button>
-          <button class="btn sm ghost" id="portraitUseArtworkAsHeroBtn">Use artwork as hero instead</button>
-          <button class="btn sm bad" id="portraitRemoveBtn">Remove portrait</button>
-        </div>
-        <p class="note" id="artistHeroSourceLabel" style="margin-top:10px">Hero source: not set yet</p>
-
-        <div class="divider"></div>
-        <h3>Artwork (auto-scaled for the site)</h3>
-        <p class="note">Upload original art here. Images are auto-resized to fit (max 1600px) and saved as WebP so the site stays fast. The first image becomes the hero image unless you change it.</p>
-        <div class="row" style="margin-top:10px;align-items:flex-end">
-          <div class="field" style="flex:1 1 240px">
-            <label>Upload artwork (JPG, PNG, WebP, HEIC — up to 25MB each)</label>
-            <input id="artistArtworkFiles" type="file" accept="image/*,.heic,.heif" multiple />
-          </div>
-          <div class="field" style="width:auto">
-            <label class="checkbox-row"><input id="artistArtworkSetHero" type="checkbox" /> Use first upload as hero image</label>
-          </div>
-          <div class="field" style="width:140px">
-            <label>&nbsp;</label>
-            <button class="btn primary" id="uploadArtworkBtn">Upload</button>
-          </div>
-        </div>
-        <div id="artistArtworkGallery" class="grid" style="grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:12px;margin-top:14px"></div>
-
-        <div class="divider"></div>
-        <div class="field full"><label>QR code URL for this artist</label><input id="artistQrUrl" type="text" readonly /></div>
-        <p class="note">Print this URL as the QR code for any product made by this artist. It opens the artist's landing page on your live website.</p>
-      </div>
-    </section>
-  </div>
-  <script src="js/admin-dashboard.js"></script>
-  <script src="js/admin-artists.js"></script>
 </body>
 </html>

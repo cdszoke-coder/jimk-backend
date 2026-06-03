@@ -118,4 +118,15 @@ router.post('/admin/artists/:id/youtube-video', adminAuth, upload.single('video'
   }
 });
 
+// Clear the testimony video off an artist (does NOT delete from YouTube).
+router.post('/admin/artists/:id/youtube-video/clear', adminAuth, (req, res) => {
+  const db = getDb();
+  const artist = db.prepare('SELECT * FROM artist_profiles WHERE id = ?').get(req.params.id);
+  if (!artist) return res.status(404).json({ error: 'Artist not found.' });
+  db.prepare(`UPDATE artist_profiles
+    SET public_video_url = NULL, embed_video_url = NULL, updated_at = CURRENT_TIMESTAMP
+    WHERE id = ?`).run(artist.id);
+  res.json({ ok: true });
+});
+
 module.exports = router;

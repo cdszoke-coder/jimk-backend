@@ -1,20 +1,41 @@
 <!--
   Paste this block inside your existing Artist editor section in public/admin.html,
-  somewhere below the artwork uploader and near the "Public video URL" field.
+  REPLACING the old "Public testimony video URL" / "Embed video URL" inputs.
+  The artist testimony video is now set by uploading to YouTube here.
+  The artist page reads the same public_video_url / embed_video_url fields, so
+  whatever you upload here becomes the testimonial video shown on the artist page.
 
-  It assumes the currently-open artist's id is stored in an input with id="artistId"
-  (or a data-id attribute on it). If your admin-artists.js already sets that field
-  when an artist is opened, this will Just Work.
+  Requires an input on the page with id="artistId" holding the open artist's id.
 -->
-<div style="border:1px solid #eee;border-radius:14px;padding:14px;margin-top:16px;background:#fff">
-  <h3 style="margin:0 0 6px">Upload artist video to YouTube</h3>
+<div style="border:1px solid #eee;border-radius:14px;padding:16px;margin-top:16px;background:#fff">
+  <h3 style="margin:0 0 6px">Artist testimony video</h3>
   <p style="margin:0 0 12px;color:#555;font-size:13px">
-    Goes to the connected ministry channel as <strong>Unlisted</strong> and is added to the <strong>Artists</strong> playlist. Check the box to make it public on the channel.
+    Upload the artist's testimony video here. It goes to the ministry YouTube channel as <strong>Unlisted</strong>, is added to the <strong>Artists</strong> playlist, and becomes the video shown on this artist's page. Uploading a new one replaces the previous one.
   </p>
 
-  <div style="display:grid;gap:10px;grid-template-columns:1fr;max-width:520px">
+  <!-- Current video preview (filled in by admin-artists.js when an artist is opened) -->
+  <div id="artistYtCurrentWrap" style="margin-bottom:14px;display:none">
+    <div style="font-weight:600;font-size:13px;margin-bottom:6px">Current video on artist page</div>
+    <div style="position:relative;padding-top:56.25%;border-radius:10px;overflow:hidden;background:#000;max-width:520px">
+      <iframe id="artistYtCurrentFrame" src="" allowfullscreen
+        style="position:absolute;inset:0;width:100%;height:100%;border:0"></iframe>
+    </div>
+    <div style="margin-top:8px">
+      <button type="button" id="artistYtRemoveBtn"
+        style="padding:8px 14px;border:1px solid #b00020;background:#fff;color:#b00020;border-radius:10px;font-weight:600;cursor:pointer">
+        Remove video from artist page
+      </button>
+    </div>
+  </div>
+
+  <!-- Hidden fields the rest of the admin code can still read, but no longer typed in by hand -->
+  <input type="hidden" id="publicVideoUrl" />
+  <input type="hidden" id="embedVideoUrl" />
+
+  <!-- Upload controls -->
+  <div style="display:grid;gap:10px;grid-template-columns:1fr;max-width:520px;margin-top:6px">
     <label style="font-weight:600;font-size:14px">
-      Video file
+      Choose video file
       <input type="file" id="artistYtFile" accept="video/*" style="display:block;margin-top:6px" />
     </label>
 
@@ -26,12 +47,12 @@
 
     <label style="display:flex;gap:8px;align-items:flex-start;font-size:14px">
       <input type="checkbox" id="artistYtMakePublic" style="margin-top:4px" />
-      <span>Make this video public on the YouTube channel (requires the artist's permission).</span>
+      <span>Make this video public on the YouTube channel (only check if the artist gave permission).</span>
     </label>
 
     <button id="artistYtUploadBtn" type="button"
       style="padding:12px 18px;border:none;border-radius:12px;background:linear-gradient(135deg,#5a2a82,#b8860b);color:#fff;font-weight:700;cursor:pointer">
-      Upload to YouTube
+      Upload &amp; set as artist testimony video
     </button>
 
     <div id="artistYtProgress" style="display:none;height:8px;background:#eee;border-radius:8px;overflow:hidden">

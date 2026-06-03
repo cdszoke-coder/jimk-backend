@@ -1,0 +1,38 @@
+================================================================
+HOW TO WIRE THE YOUTUBE ROUTES INTO YOUR EXISTING server.js
+================================================================
+
+1) In src/server.js, near your other route mounts, add:
+
+   const youtubeRoutes = require('./routes/youtube');
+   app.use('/api', youtubeRoutes);
+
+   (The youtube router defines both /public/... and /admin/... paths internally,
+    so it mounts at /api, NOT at /api/admin or /api/public.)
+
+2) Make sure the SQLite client also runs the new schema file at startup.
+
+   In src/db/client.js, where you already run schema.sql, also run schema_youtube.sql.
+   Example (inside initDatabase):
+
+      const sql1 = fs.readFileSync(path.join(__dirname, 'schema.sql'), 'utf8');
+      db.exec(sql1);
+      const sql2Path = path.join(__dirname, 'schema_youtube.sql');
+      if (fs.existsSync(sql2Path)) {
+        db.exec(fs.readFileSync(sql2Path, 'utf8'));
+      }
+
+3) Required environment variables on Render (Service > Environment):
+
+   YT_CLIENT_ID       = 681805068233-ij2n0p0f31lkdcpi1ccnij1o7cqopli9.apps.googleusercontent.com
+   YT_CLIENT_SECRET   = (paste the NEW rotated secret from Google Cloud — do NOT use the one shared in chat)
+   YT_REDIRECT_URI    = https://jimk-backend.onrender.com/api/admin/youtube/oauth/callback
+   ADMIN_API_KEY      = (your existing admin key)
+
+4) Make sure multer is installed in the backend (it already is for the artist system):
+      "multer": "^1.4.5-lts.1"
+
+5) After deploy:
+   a) Open admin dashboard, scroll to the YouTube panel.
+   b) Click "Connect YouTube" — sign in with the @jesusismykingmovement Google account, approve access.
+   c) The page will return "YouTube is now connected." and the Testimonials playlist will be created (or found) automatically.

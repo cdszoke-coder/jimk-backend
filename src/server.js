@@ -6,6 +6,8 @@ const env = require('./config/env');
 const { initDatabase } = require('./db/client');
 const publicRoutes = require('./routes/public');
 const adminRoutes = require('./routes/admin');
+const youtubeRoutes = require('./routes/youtube');
+        app.use('/api', youtubeRoutes);
 
 initDatabase();
 

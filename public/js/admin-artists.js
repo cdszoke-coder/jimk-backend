@@ -258,7 +258,7 @@
     var fileEl = $('portraitFile');
     var f = fileEl && fileEl.files && fileEl.files[0];
     if (!f) return;
-    var makeHero = ($('portraitMakeHero') || {}).checked;
+    var makeHero = !!($('portraitMakeHero') || {}).checked;
 
     var fd = new FormData();
     fd.append('image', f);                                  // backend expects 'image'
@@ -266,7 +266,18 @@
 
     setStatus('portraitStatus', 'Uploading...');
     api('POST', '/api/admin/artists/' + encodeURIComponent(id) + '/portrait', fd, true)
-      .then(function () { setStatus('portraitStatus', 'Uploaded.', 'ok'); openArtist(id); })
+      .then(function () {
+        if (makeHero) {
+          // Force hero_source = portrait so it sticks even if the backend ignored set_as_hero
+          return api('POST',
+            '/api/admin/artists/' + encodeURIComponent(id) + '/portrait/use-as-hero',
+            { use_as: 'portrait' });
+        }
+      })
+      .then(function () {
+        setStatus('portraitStatus', makeHero ? 'Uploaded and set as hero.' : 'Uploaded.', 'ok');
+        openArtist(id);
+      })
       .catch(function (e) { setStatus('portraitStatus', e.message, 'err'); });
   }
 

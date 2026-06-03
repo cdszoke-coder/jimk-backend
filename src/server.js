@@ -16,6 +16,8 @@ initDatabase();
 
 const publicRoutes = require('./routes/public');
 const adminRoutes = require('./routes/admin');
+const welcomeRoutes = require('./routes/welcome');
+app.use('/api', welcomeRoutes);
 
 // Accept both export styles:
 //   module.exports = router                  (function)

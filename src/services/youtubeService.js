@@ -26,7 +26,7 @@ const CLIENT_ID = process.env.YT_CLIENT_ID || '';
 const CLIENT_SECRET = process.env.YT_CLIENT_SECRET || '';
 const REDIRECT_URI =
   process.env.YT_REDIRECT_URI ||
-  'https://jimk-backend.onrender.com/api/admin/youtube/oauth/callback';
+  'https://jimk-backend.onrender.com/api/public/youtube/oauth/callback';
 
 const SCOPES = [
   'https://www.googleapis.com/auth/youtube.upload',

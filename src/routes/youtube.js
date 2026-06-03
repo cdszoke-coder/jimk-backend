@@ -7,7 +7,7 @@
  * - Admin (requires x-admin-key):
  *    GET  /api/admin/youtube/status
  *    GET  /api/admin/youtube/auth-url
- *    GET  /api/admin/youtube/oauth/callback       (Google redirects here)
+ *    GET  /api/public/youtube/oauth/callback      (Google redirects here — public path so admin auth does not block it)
  *    POST /api/admin/youtube/disconnect
  *    GET  /api/admin/youtube/testimonies?status=pending|approved|rejected|all
  *    POST /api/admin/youtube/testimonies/:id/approve
@@ -127,8 +127,9 @@ router.get('/admin/youtube/auth-url', adminAuth, (req, res) => {
 });
 
 // Google redirects here (NO admin key — this is called by the browser after consent).
-// We accept it and show a simple HTML success page.
-router.get('/admin/youtube/oauth/callback', async (req, res) => {
+// IMPORTANT: this MUST live under /api/public/... so any global admin-auth middleware
+// on /api/admin/... does not block Google's redirect.
+router.get('/public/youtube/oauth/callback', async (req, res) => {
   const code = req.query.code;
   if (!code) return res.status(400).send('Missing authorization code.');
   try {

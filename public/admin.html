@@ -314,8 +314,35 @@
         <p class="note" id="statusNote">Enter your admin key to load moderation data.</p>
       </div>
     </section>
+<section class="admin-panel" style="margin-top:24px;padding:18px;border:1px solid #eee;border-radius:14px;background:#fff">
+  <h2 style="margin:0 0 6px">YouTube — Testimony Videos</h2>
+  <p style="margin:0 0 12px;color:#555;font-size:14px">
+    Connect the ministry YouTube channel. New phone uploads go straight to YouTube as <strong>Unlisted</strong> and into the <strong>Testimonials</strong> playlist. You can approve or reject below.
+  </p>
 
-    <section class="grid stats">
+  <div id="ytStatus" style="margin-bottom:12px;padding:10px 12px;background:#faf6ff;border-radius:10px"></div>
+
+  <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:18px">
+    <button id="ytConnectBtn">Connect YouTube</button>
+    <button id="ytDisconnectBtn">Disconnect</button>
+    <button id="ytEnsurePlaylistBtn">Create / find Testimonials playlist</button>
+  </div>
+
+  <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:10px">
+    <label for="ytFilter" style="font-weight:600">Show:</label>
+    <select id="ytFilter">
+      <option value="pending" selected>Pending</option>
+      <option value="approved">Approved</option>
+      <option value="rejected">Rejected</option>
+      <option value="all">All</option>
+    </select>
+    <button id="ytReloadBtn">Reload</button>
+  </div>
+
+  <div id="ytTestList"></div>
+</section>
+
+<script src="js/admin-youtube.js"></script>    <section class="grid stats">
       <div class="panel stat"><div class="label">Pending</div><div class="value" id="statPending">0</div></div>
       <div class="panel stat"><div class="label">Approved new</div><div class="value" id="statApprovedNew">0</div></div>
       <div class="panel stat"><div class="label">Merged</div><div class="value" id="statMerged">0</div></div>

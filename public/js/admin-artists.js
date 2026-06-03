@@ -1,27 +1,28 @@
 'use strict';
 
 /**
- * Artists admin panel — drop-in version.
+ * Artists admin panel — drop-in version matching the real backend in
+ * src/routes/artists.js:
+ *   - Portrait: POST /api/admin/artists/:id/portrait      multer field 'image'
+ *   - Artwork:  POST /api/admin/artists/:id/artwork       multer field 'images'
+ *   - Hero set: POST /api/admin/artists/:id/hero          body: { hero_image_url }
+ *   - Hero source toggle: POST /api/admin/artists/:id/portrait/use-as-hero
+ *         body: { use_as: 'portrait' | 'artwork' }
+ *   - Delete artwork: DELETE /api/admin/artists/:id/artwork
+ *         body: { artwork_url }
+ *   - Delete portrait: DELETE /api/admin/artists/:id/portrait
+ *   - 'set_as_hero' is sent as the string 'true' / 'false'
  *
- * Upload field-name resilience:
- *   - Portrait: tries 'portrait' -> 'file' -> 'image'
- *   - Artwork:  tries 'images'  -> 'files' -> 'artwork'
- *   Uses the first name that doesn't return "Unexpected field".
- *
- * Matches artist_profiles schema:
+ * Schema:
  *   id, slug, display_name, location, medium, joined_label,
  *   short_quote, bio, testimony_summary,
  *   public_video_url, embed_video_url,
  *   hero_image_url, portrait_image_url,
- *   hero_source ('artwork'|'portrait'),
- *   artwork_json (JSON string),
- *   status ('active'|'hidden'|'archived'),
- *   created_at, updated_at
+ *   hero_source ('artwork'|'portrait'), artwork_json (JSON string of URLs),
+ *   status ('active'|'hidden'|'archived'), created_at, updated_at
  */
 
 (function () {
-  var BACKEND = ''; // same-origin
-
   function key() { return localStorage.getItem('jimk_admin_key') || ''; }
   function esc(s) {
     return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) {
@@ -41,14 +42,13 @@
       headers['Content-Type'] = 'application/json';
       opts.body = JSON.stringify(body);
     }
-    return fetch(BACKEND + url, opts).then(function (r) {
+    return fetch(url, opts).then(function (r) {
       return r.text().then(function (t) {
         var j;
         try { j = t ? JSON.parse(t) : {}; } catch (e) { j = { error: 'Non-JSON response: ' + t.slice(0, 200) }; }
         if (!r.ok) {
           var err = new Error(j.error || ('HTTP ' + r.status));
-          err.status = r.status;
-          err.body = j;
+          err.status = r.status; err.body = j;
           throw err;
         }
         return j;
@@ -56,44 +56,12 @@
     });
   }
 
-  /**
-   * Tries each candidate field name in order until one succeeds, OR
-   * until we run out of candidates. Detects "Unexpected field" errors
-   * (multer rejects the part), or 500/400 errors whose message contains
-   * "unexpected field", and retries with the next candidate.
-   */
-  function tryFieldNames(url, files, fieldCandidates, extraFormPairs) {
-    var attempt = 0;
-    function next() {
-      if (attempt >= fieldCandidates.length) {
-        return Promise.reject(new Error('No accepted upload field name. Try renaming the field in the front-end or the backend.'));
-      }
-      var name = fieldCandidates[attempt++];
-      var fd = new FormData();
-      if (files && files.length === 1 && !files._multi) {
-        fd.append(name, files[0]);
-      } else if (files && files.length) {
-        for (var i = 0; i < files.length; i++) fd.append(name, files[i]);
-      }
-      if (extraFormPairs) {
-        Object.keys(extraFormPairs).forEach(function (k) { fd.append(k, extraFormPairs[k]); });
-      }
-      return api('POST', url, fd, true).catch(function (e) {
-        var msg = String(e.message || '').toLowerCase();
-        var isFieldError = msg.indexOf('unexpected field') !== -1 || msg.indexOf('multipart') !== -1;
-        if (isFieldError) return next();
-        throw e;
-      });
-    }
-    return next();
-  }
-
   /* --------------- artist list --------------- */
   function loadList() {
     if (!key()) return;
     var q = encodeURIComponent(getVal('artistSearch'));
     var s = encodeURIComponent(getVal('artistStatusFilter') || 'all');
-    api('GET', '/api/admin/artists?q=' + q + '&status=' + s + '&page=1&page_size=100')
+    api('GET', '/api/admin/artists?query=' + q + '&status=' + s + '&page=1&page_size=100')
       .then(function (r) { renderList((r && r.items) || []); })
       .catch(function (e) {
         var el = $('artistList'); if (el) el.innerHTML = '<div style="color:#b00020">Error: ' + esc(e.message) + '</div>';
@@ -130,38 +98,28 @@
   function openArtist(id) {
     if (!id) return openNewArtist();
     api('GET', '/api/admin/artists/' + encodeURIComponent(id))
-      .then(function (r) {
-        var a = (r && r.artist) || r;
-        renderEditor(a);
-      })
+      .then(function (r) { renderEditor((r && r.artist) || r); })
       .catch(function (e) {
         var el = $('artistEditorBody'); if (el) el.innerHTML = '<div style="color:#b00020">Error: ' + esc(e.message) + '</div>';
       });
   }
-
   function openNewArtist() {
     renderEditor({
       id: '', slug: '', display_name: '', location: '', medium: '', joined_label: '',
       short_quote: '', bio: '', testimony_summary: '',
       public_video_url: '', embed_video_url: '',
       hero_image_url: '', portrait_image_url: '',
-      hero_source: 'artwork', artwork_json: '[]',
+      hero_source: 'artwork', artwork_urls: [],
       status: 'active', _isNew: true
     });
   }
-
-  function parseArtwork(a) {
-    if (Array.isArray(a.artwork_urls)) return a.artwork_urls;
-    try { return JSON.parse(a.artwork_json || '[]') || []; } catch (e) { return []; }
-  }
-
   function field(label, control) {
     return '<label style="display:block"><span style="display:block;font-size:13px;font-weight:600;color:#333;margin-bottom:4px">' + esc(label) + '</span>' + control + '</label>';
   }
 
   function renderEditor(a) {
     setVal('artistId', a.id || '');
-    var artworks = parseArtwork(a);
+    var artworks = Array.isArray(a.artwork_urls) ? a.artwork_urls : [];
     var heroSource = a.hero_source || 'artwork';
 
     var html = '' +
@@ -202,7 +160,10 @@
           '<div style="font-size:13px;color:#666;margin-bottom:10px">Used as the hero image when "Hero source: portrait" is selected. Never appears in the public art gallery.</div>' +
           (a.portrait_image_url
             ? '<img src="' + esc(a.portrait_image_url) + '" style="width:140px;height:140px;object-fit:cover;border-radius:12px;background:#eee" />' +
-              '<div style="margin-top:8px"><button type="button" id="removePortraitBtn" class="danger">Remove portrait</button></div>'
+              '<div style="margin-top:8px;display:flex;gap:8px;flex-wrap:wrap">' +
+                '<button type="button" id="usePortraitHeroBtn">Use portrait as hero source</button>' +
+                '<button type="button" id="removePortraitBtn" class="danger">Remove portrait</button>' +
+              '</div>'
             : '<div style="color:#888;font-size:13px">No portrait uploaded yet.</div>'
           ) +
           '<div style="margin-top:10px">' +
@@ -221,12 +182,12 @@
           '</div>' +
           '<div id="artworkGrid" style="display:grid;gap:10px;grid-template-columns:repeat(auto-fill,minmax(120px,1fr))">' +
             (artworks.length
-              ? artworks.map(function (url, idx) {
+              ? artworks.map(function (url) {
                   var isHero = (heroSource === 'artwork' && a.hero_image_url === url);
                   return '<div style="position:relative;border:2px solid ' + (isHero ? '#b8860b' : '#eee') + ';border-radius:10px;overflow:hidden;background:#fff">' +
                     '<img src="' + esc(url) + '" style="width:100%;height:120px;object-fit:cover;display:block" />' +
                     '<div style="display:flex;gap:4px;padding:6px;font-size:12px">' +
-                      '<button type="button" class="set-hero" data-url="' + esc(url) + '" data-idx="' + idx + '">Set hero</button>' +
+                      '<button type="button" class="set-hero" data-url="' + esc(url) + '">Set hero</button>' +
                       '<button type="button" class="del-art danger" data-url="' + esc(url) + '">Remove</button>' +
                     '</div>' +
                   '</div>';
@@ -246,17 +207,16 @@
     $('artistEditorBody').innerHTML = html;
 
     var b;
-    if ((b = $('saveArtistBtn')))     b.addEventListener('click', saveArtist);
-    if ((b = $('reloadArtistBtn')))   b.addEventListener('click', function () { openArtist(a.id); });
+    if ((b = $('saveArtistBtn')))      b.addEventListener('click', saveArtist);
+    if ((b = $('reloadArtistBtn')))    b.addEventListener('click', function () { openArtist(a.id); });
     if ((b = $('uploadPortraitBtn'))) b.addEventListener('click', uploadPortrait);
     if ((b = $('removePortraitBtn'))) b.addEventListener('click', removePortrait);
+    if ((b = $('usePortraitHeroBtn'))) b.addEventListener('click', function () { setHeroSource('portrait'); });
     if ((b = $('uploadArtworkBtn')))  b.addEventListener('click', uploadArtwork);
     if ((b = $('useArtworkHeroBtn'))) b.addEventListener('click', function () { setHeroSource('artwork'); });
 
     document.querySelectorAll('button.set-hero').forEach(function (btn) {
-      btn.addEventListener('click', function () {
-        setHero(btn.getAttribute('data-url'), Number(btn.getAttribute('data-idx')));
-      });
+      btn.addEventListener('click', function () { setHero(btn.getAttribute('data-url')); });
     });
     document.querySelectorAll('button.del-art').forEach(function (btn) {
       btn.addEventListener('click', function () { removeArtwork(btn.getAttribute('data-url')); });
@@ -291,7 +251,7 @@
     }).catch(function (e) { alert('Save failed: ' + e.message); });
   }
 
-  /* --------------- portrait --------------- */
+  /* --------------- portrait (field name 'image') --------------- */
   function uploadPortrait() {
     var id = getVal('artistId');
     if (!id) { alert('Save the artist first.'); return; }
@@ -300,19 +260,14 @@
     if (!f) return;
     var makeHero = ($('portraitMakeHero') || {}).checked;
 
-    setStatus('portraitStatus', 'Uploading (trying field names)...');
-    var url = '/api/admin/artists/' + encodeURIComponent(id) + '/portrait';
-    var extra = makeHero ? { make_hero: '1' } : null;
-    var fileList = [f]; // single file
+    var fd = new FormData();
+    fd.append('image', f);                                  // backend expects 'image'
+    fd.append('set_as_hero', makeHero ? 'true' : 'false');  // string 'true'/'false'
 
-    tryFieldNames(url, fileList, ['portrait', 'file', 'image'], extra)
-      .then(function () {
-        setStatus('portraitStatus', 'Uploaded.', 'ok');
-        openArtist(id);
-      })
-      .catch(function (e) {
-        setStatus('portraitStatus', e.message, 'err');
-      });
+    setStatus('portraitStatus', 'Uploading...');
+    api('POST', '/api/admin/artists/' + encodeURIComponent(id) + '/portrait', fd, true)
+      .then(function () { setStatus('portraitStatus', 'Uploaded.', 'ok'); openArtist(id); })
+      .catch(function (e) { setStatus('portraitStatus', e.message, 'err'); });
   }
 
   function removePortrait() {
@@ -324,7 +279,7 @@
       .catch(function (e) { alert(e.message); });
   }
 
-  /* --------------- artwork --------------- */
+  /* --------------- artwork (field name 'images') --------------- */
   function uploadArtwork() {
     var id = getVal('artistId');
     if (!id) { alert('Save the artist first.'); return; }
@@ -332,44 +287,38 @@
     var files = fileEl && fileEl.files;
     if (!files || !files.length) return;
 
-    setStatus('artworkStatus', 'Uploading ' + files.length + ' file(s) (trying field names)...');
-    var url = '/api/admin/artists/' + encodeURIComponent(id) + '/artwork';
+    var fd = new FormData();
+    for (var i = 0; i < files.length; i++) fd.append('images', files[i]); // backend expects 'images'
 
-    // Mark as multi-file so tryFieldNames appends each one
-    var arr = Array.prototype.slice.call(files);
-    arr._multi = true;
-
-    tryFieldNames(url, arr, ['images', 'files', 'artwork'], null)
-      .then(function () {
-        setStatus('artworkStatus', 'Uploaded.', 'ok');
-        openArtist(id);
-      })
-      .catch(function (e) {
-        setStatus('artworkStatus', e.message, 'err');
-      });
+    setStatus('artworkStatus', 'Uploading ' + files.length + ' file(s)...');
+    api('POST', '/api/admin/artists/' + encodeURIComponent(id) + '/artwork', fd, true)
+      .then(function () { setStatus('artworkStatus', 'Uploaded.', 'ok'); openArtist(id); })
+      .catch(function (e) { setStatus('artworkStatus', e.message, 'err'); });
   }
 
   function removeArtwork(url) {
     var id = getVal('artistId');
     if (!id || !url) return;
     if (!confirm('Remove this artwork?')) return;
-    api('DELETE', '/api/admin/artists/' + encodeURIComponent(id) + '/artwork', { url: url })
+    api('DELETE', '/api/admin/artists/' + encodeURIComponent(id) + '/artwork', { artwork_url: url })
       .then(function () { openArtist(id); })
       .catch(function (e) { alert(e.message); });
   }
 
-  function setHero(url, idx) {
+  /* --------------- hero (body: { hero_image_url }) --------------- */
+  function setHero(url) {
     var id = getVal('artistId');
     if (!id) return;
-    api('POST', '/api/admin/artists/' + encodeURIComponent(id) + '/hero', { source: 'artwork', url: url, index: idx })
+    api('POST', '/api/admin/artists/' + encodeURIComponent(id) + '/hero', { hero_image_url: url })
       .then(function () { openArtist(id); })
       .catch(function (e) { alert(e.message); });
   }
 
+  /* --------------- hero source toggle (use-as-hero) --------------- */
   function setHeroSource(source) {
     var id = getVal('artistId');
     if (!id) return;
-    api('POST', '/api/admin/artists/' + encodeURIComponent(id) + '/hero', { source: source })
+    api('POST', '/api/admin/artists/' + encodeURIComponent(id) + '/portrait/use-as-hero', { use_as: source })
       .then(function () { openArtist(id); })
       .catch(function (e) { alert(e.message); });
   }
@@ -380,7 +329,7 @@
     el.style.color = kind === 'err' ? '#b00020' : (kind === 'ok' ? '#0a7d2c' : '#333');
   }
 
-  /* --------------- YouTube section mount --------------- */
+  /* --------------- YouTube testimony video section --------------- */
   function mountArtistYoutubeSection(a) {
     var mount = $('artistYoutubeMount');
     if (!mount) return;
@@ -417,24 +366,20 @@
         public_video_url: a.public_video_url,
         embed_video_url: a.embed_video_url
       });
-    } else {
-      if (a.embed_video_url || a.public_video_url) {
-        var f = $('artistYtCurrentFrame'); var w = $('artistYtCurrentWrap');
-        if (f && w) { f.src = a.embed_video_url || ''; w.style.display = ''; }
-      }
+    } else if (a.embed_video_url || a.public_video_url) {
+      var f = $('artistYtCurrentFrame'); var w = $('artistYtCurrentWrap');
+      if (f && w) { f.src = a.embed_video_url || ''; w.style.display = ''; }
     }
   }
 
   /* --------------- wire top controls --------------- */
+  function debounce(fn, ms) { var t; return function () { clearTimeout(t); t = setTimeout(fn, ms); }; }
   function wire() {
     var b;
     if ((b = $('artistReloadBtn')))    b.addEventListener('click', loadList);
     if ((b = $('artistNewBtn')))       b.addEventListener('click', openNewArtist);
     if ((b = $('artistSearch')))       b.addEventListener('input', debounce(loadList, 250));
-    if ((b = $('artistStatusFilter')) ) b.addEventListener('change', loadList);
-  }
-  function debounce(fn, ms) {
-    var t; return function () { clearTimeout(t); t = setTimeout(fn, ms); };
+    if ((b = $('artistStatusFilter'))) b.addEventListener('change', loadList);
   }
 
   document.addEventListener('DOMContentLoaded', function () { wire(); loadList(); });

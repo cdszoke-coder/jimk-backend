@@ -6,8 +6,7 @@ const env = require('./config/env');
 const { initDatabase } = require('./db/client');
 const publicRoutes = require('./routes/public');
 const adminRoutes = require('./routes/admin');
-const youtubeRoutes = require('./routes/youtube');
-        app.use('/api', youtubeRoutes);
+
 
 initDatabase();
 
@@ -22,7 +21,8 @@ app.get('/healthz', (req, res) => {
 
 app.use('/api/public', publicRoutes);
 app.use('/api/admin', adminRoutes);
-
+const youtubeRoutes = require('./routes/youtube');
+        app.use('/api', youtubeRoutes);
 const publicDir = path.join(__dirname, '..', 'public');
 const uploadsDir = env.uploadsDir;
 fs.mkdirSync(uploadsDir, { recursive: true });

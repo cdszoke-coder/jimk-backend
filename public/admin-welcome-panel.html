@@ -1,0 +1,38 @@
+<!--
+  Paste this panel into public/admin.html, replacing the old
+  "Founder Default" section. It updates the Welcome / Call-to-Action
+  video shown on the Join the Movement page, the QR scan (story) page,
+  and the homepage placeholder.
+-->
+<section class="panel">
+  <h2>Movement Welcome Video</h2>
+  <p class="sub">This short call-to-action video plays at the top of <strong>Join the Movement</strong>, on every <strong>unlinked QR scan</strong>, and on the homepage placeholder. It explains the movement and the wall — it is not a personal testimony.</p>
+
+  <label style="display:block;margin-bottom:10px">
+    <span style="display:block;font-weight:600;font-size:13px;margin-bottom:4px">Title</span>
+    <input type="text" id="welcomeTitleInput" placeholder="Welcome to the Movement" style="width:100%;padding:10px 12px;border:1px solid #ddd;border-radius:10px;font:inherit" />
+  </label>
+
+  <label style="display:block;margin-bottom:10px">
+    <span style="display:block;font-weight:600;font-size:13px;margin-bottom:4px">Short call-to-action description</span>
+    <textarea id="welcomeCtaInput" rows="3" placeholder="This wall is filled with people who put Jesus first..." style="width:100%;padding:10px 12px;border:1px solid #ddd;border-radius:10px;font:inherit"></textarea>
+  </label>
+
+  <label style="display:block;margin-bottom:10px">
+    <span style="display:block;font-weight:600;font-size:13px;margin-bottom:4px">YouTube video URL</span>
+    <input type="text" id="welcomeVideoUrlInput" placeholder="https://www.youtube.com/watch?v=..." style="width:100%;padding:10px 12px;border:1px solid #ddd;border-radius:10px;font:inherit" />
+    <span style="font-size:12px;color:#777">Leave blank to keep the "coming soon" placeholder. Embed URL is auto-generated from the watch URL.</span>
+  </label>
+
+  <label style="display:block;margin-bottom:14px">
+    <span style="display:block;font-weight:600;font-size:13px;margin-bottom:4px">Embed URL (optional override)</span>
+    <input type="text" id="welcomeEmbedUrlInput" placeholder="https://www.youtube.com/embed/..." style="width:100%;padding:10px 12px;border:1px solid #ddd;border-radius:10px;font:inherit" />
+  </label>
+
+  <div class="row">
+    <button class="primary" id="saveWelcomeBtn">Save welcome video</button>
+    <span class="status-line" id="welcomeStatus"></span>
+  </div>
+</section>
+
+<script src="js/admin-welcome.js"></script>

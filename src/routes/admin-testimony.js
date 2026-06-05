@@ -240,4 +240,130 @@ router.post('/wall/:id(\\d+)/restore', (req, res) => {
   }
 });
 
+// Attach a QR code to an existing wall record (multi-shirt / multi-sticker support).
+// Body: { code: 'JIMK-SHARE-0007', owner_profile_id: 12 }
+// Allows one testimony to be reachable from many physical items.
+router.post('/codes/attach', (req, res) => {
+  try {
+    const db = getDb();
+    const body = req.body || {};
+    const code = String(body.code || '').trim().toUpperCase();
+    const ownerId = Number(body.owner_profile_id);
+    if (!code) return res.status(400).json({ error: 'missing_code' });
+    if (!Number.isFinite(ownerId) || ownerId <= 0) return res.status(400).json({ error: 'missing_owner_profile_id' });
+
+    const owner = db.prepare('SELECT id, slug, display_name FROM owner_profiles WHERE id = ?').get(ownerId);
+    if (!owner) return res.status(404).json({ error: 'owner_profile_not_found' });
+
+    const existing = db.prepare('SELECT item_code, owner_profile_id FROM testimony_item_codes WHERE item_code = ?').get(code);
+
+    if (existing && existing.owner_profile_id && existing.owner_profile_id !== ownerId) {
+      // Block reassignment unless caller passes force=true
+      if (!body.force) {
+        return res.status(409).json({
+          error: 'code_already_linked',
+          existing_owner_profile_id: existing.owner_profile_id,
+          hint: 'Pass force:true to move this code to a different testimony.'
+        });
+      }
+    }
+
+    if (existing) {
+      db.prepare(`
+        UPDATE testimony_item_codes
+           SET owner_profile_id = ?,
+               destination_mode = 'owner_profile',
+               updated_at = datetime('now')
+         WHERE item_code = ?
+      `).run(ownerId, code);
+    } else {
+      db.prepare(`
+        INSERT INTO testimony_item_codes (item_code, destination_mode, owner_profile_id, updated_at)
+        VALUES (?, 'owner_profile', ?, datetime('now'))
+      `).run(code, ownerId);
+    }
+
+    res.json({
+      ok: true,
+      code,
+      owner_profile_id: ownerId,
+      owner_slug: owner.slug,
+      owner_display_name: owner.display_name,
+      reassigned: !!(existing && existing.owner_profile_id && existing.owner_profile_id !== ownerId)
+    });
+  } catch (err) {
+    console.error('[admin-testimony] attach code error:', err);
+    res.status(500).json({ error: 'attach_failed', message: err.message });
+  }
+});
+
+// Detach a QR code (admin override).
+router.post('/codes/detach', (req, res) => {
+  try {
+    const db = getDb();
+    const code = String((req.body && req.body.code) || '').trim().toUpperCase();
+    if (!code) return res.status(400).json({ error: 'missing_code' });
+    const r = db.prepare(`
+      UPDATE testimony_item_codes
+         SET owner_profile_id = NULL,
+             updated_at = datetime('now')
+       WHERE item_code = ?
+    `).run(code);
+    res.json({ ok: true, code, cleared: r.changes });
+  } catch (err) {
+    res.status(500).json({ error: 'detach_failed', message: err.message });
+  }
+});
+
+// Browse all codes for the admin code-picker dropdown.
+router.get('/codes', (req, res) => {
+  try {
+    const db = getDb();
+    const status = String(req.query.status || 'all'); // all | unused | linked
+    let rows;
+    if (status === 'unused') {
+      rows = db.prepare(`
+        SELECT item_code, owner_profile_id
+          FROM testimony_item_codes
+         WHERE owner_profile_id IS NULL
+         ORDER BY item_code
+      `).all();
+    } else if (status === 'linked') {
+      rows = db.prepare(`
+        SELECT c.item_code, c.owner_profile_id, o.display_name AS owner_display_name, o.slug AS owner_slug
+          FROM testimony_item_codes c
+          LEFT JOIN owner_profiles o ON o.id = c.owner_profile_id
+         WHERE c.owner_profile_id IS NOT NULL
+         ORDER BY c.item_code
+      `).all();
+    } else {
+      rows = db.prepare(`
+        SELECT c.item_code, c.owner_profile_id, o.display_name AS owner_display_name, o.slug AS owner_slug
+          FROM testimony_item_codes c
+          LEFT JOIN owner_profiles o ON o.id = c.owner_profile_id
+         ORDER BY c.item_code
+      `).all();
+    }
+    res.json({ items: rows });
+  } catch (err) {
+    res.status(500).json({ error: 'list_codes_failed', message: err.message });
+  }
+});
+
+// Browse wall records (for the "attach to existing testimony" dropdown).
+router.get('/owners', (req, res) => {
+  try {
+    const db = getDb();
+    const rows = db.prepare(`
+      SELECT id, slug, display_name, location, format
+        FROM owner_profiles
+       WHERE status = 'active'
+       ORDER BY display_name
+    `).all();
+    res.json({ items: rows });
+  } catch (err) {
+    res.status(500).json({ error: 'list_owners_failed', message: err.message });
+  }
+});
+
 module.exports = router;

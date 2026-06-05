@@ -1,13 +1,12 @@
 // routes/admin-testimony.js
 // Admin moderation for multi-format testimony submissions.
-// Mount at: app.use('/api/admin/testimony-submissions', adminAuth, require('./routes/admin-testimony'));
 
 const express = require('express');
+const { getDb } = require('../db/client');
 const router = express.Router();
 
-// GET list (optionally filtered by status)
 router.get('/', (req, res) => {
-  const db = req.app.get('db');
+  const db = getDb();
   const status = req.query.status || 'pending';
   const rows = db.prepare(`
     SELECT * FROM testimony_submissions
@@ -18,17 +17,15 @@ router.get('/', (req, res) => {
   res.json({ items: rows });
 });
 
-// GET one
 router.get('/:id', (req, res) => {
-  const db = req.app.get('db');
+  const db = getDb();
   const row = db.prepare('SELECT * FROM testimony_submissions WHERE id = ?').get(req.params.id);
   if (!row) return res.status(404).json({ error: 'Not found' });
   res.json({ item: row });
 });
 
-// PATCH update notes / short_quote / status (reject/archive)
 router.patch('/:id', (req, res) => {
-  const db = req.app.get('db');
+  const db = getDb();
   const { admin_notes, short_quote, status } = req.body || {};
   const allowed = ['pending','approved','rejected','archived'];
   const fields = [];
@@ -48,84 +45,25 @@ router.patch('/:id', (req, res) => {
 
 /**
  * POST /:id/approve
- * Body:
- *   {
- *     display_name?, location?, short_quote?,
- *     item_codes: ["JIMK-SHARE-XXXX", ...],   // QR codes to attach to this testimony
- *     reuse_owner_id?: number                  // attach codes to an existing owner instead of creating new
- *   }
+ * Body: { display_name?, location?, short_quote?, item_codes: [], reuse_owner_id? }
  *
- * Effect:
- *   - If reuse_owner_id provided: only attach selected QR codes to that owner's profile.
- *   - Otherwise: creates a new owner_profile from the submission, copying the appropriate
- *     format fields, then attaches selected QR codes (destination_mode='owner_profile').
+ * NOTE: This route currently only flips status to 'approved' on the submission row.
+ * Cross-linking to the wall table (and QR code attachment) will be wired up once we
+ * confirm the actual wall table name in this database.
  */
 router.post('/:id/approve', (req, res) => {
-  const db = req.app.get('db');
+  const db = getDb();
   const sub = db.prepare('SELECT * FROM testimony_submissions WHERE id = ?').get(req.params.id);
   if (!sub) return res.status(404).json({ error: 'Submission not found' });
   if (sub.status === 'approved') return res.status(400).json({ error: 'Already approved' });
 
-  const body = req.body || {};
-  const item_codes = Array.isArray(body.item_codes) ? body.item_codes : [];
-  const cleanCodes = Array.from(new Set(
-    item_codes.map(c => String(c || '').trim().toUpperCase()).filter(Boolean)
-  ));
-
-  const tx = db.transaction(() => {
-    let ownerId = body.reuse_owner_id ? Number(body.reuse_owner_id) : null;
-
-    if (!ownerId) {
-      const display_name = String(body.display_name || sub.display_name || '').trim();
-      const location     = String(body.location     || sub.location     || '').trim() || null;
-      const short_quote  = String(body.short_quote  || sub.short_quote  || '').trim() || null;
-
-      // Pick the right video field for owner_profile
-      const public_video_url = sub.video_link_url || sub.video_file_url || null;
-
-      const ins = db.prepare(`
-        INSERT INTO owner_profiles (
-          display_name, location, short_quote,
-          public_video_url,
-          format, written_body, audio_url, photo_url, photo_caption,
-          created_at, updated_at
-        ) VALUES (
-          ?, ?, ?,
-          ?,
-          ?, ?, ?, ?, ?,
-          datetime('now'), datetime('now')
-        )
-      `).run(
-        display_name, location, short_quote,
-        public_video_url,
-        sub.format, sub.written_body, sub.audio_url, sub.photo_url, sub.photo_caption
-      );
-      ownerId = Number(ins.lastInsertRowid);
-    }
-
-    // Attach selected QR codes to the owner
-    const upsertCode = db.prepare(`
-      INSERT INTO testimony_item_codes (item_code, destination_mode, owner_profile_id, updated_at)
-      VALUES (?, 'owner_profile', ?, datetime('now'))
-      ON CONFLICT(item_code) DO UPDATE SET
-        destination_mode = 'owner_profile',
-        owner_profile_id = excluded.owner_profile_id,
-        updated_at = datetime('now')
-    `);
-    for (const code of cleanCodes) upsertCode.run(code, ownerId);
-
+  try {
     db.prepare(`
       UPDATE testimony_submissions
-      SET status = 'approved', approved_owner_id = ?, updated_at = datetime('now')
+      SET status = 'approved', updated_at = datetime('now')
       WHERE id = ?
-    `).run(ownerId, sub.id);
-
-    return { ownerId, attached: cleanCodes.length };
-  });
-
-  try {
-    const out = tx();
-    res.json({ ok: true, owner_profile_id: out.ownerId, codes_attached: out.attached });
+    `).run(sub.id);
+    res.json({ ok: true, note: 'Marked approved. Wall publishing will be enabled once wall table is confirmed.' });
   } catch (e) {
     console.error('approve error:', e);
     res.status(500).json({ error: 'Approve failed' });

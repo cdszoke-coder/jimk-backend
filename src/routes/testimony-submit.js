@@ -7,6 +7,7 @@ const path = require('path');
 const fs = require('fs');
 const express = require('express');
 const multer = require('multer');
+const { getDb } = require('../db/client');
 
 const router = express.Router();
 
@@ -60,7 +61,7 @@ function clean(s, max = 5000) {
 
 router.post('/', upload, (req, res) => {
   try {
-    const db = req.app.get('db');
+    const db = getDb();
     if (!db) return res.status(500).json({ error: 'database not ready' });
 
     const b = req.body || {};
@@ -97,7 +98,6 @@ router.post('/', upload, (req, res) => {
     const photo_caption  = clean(b.photo_caption, 1500);
     const contact_email  = clean(b.contact_email, 200);
 
-    // Per-format required fields
     if (format === 'video' && !video_file_url && !video_link_url) {
       return res.status(400).json({ error: 'Upload a video file or paste a video link' });
     }

@@ -77,7 +77,7 @@ if (welcomeRoutes)              app.use('/api', welcomeRoutes);
 // Multi-format testimony submission (public) + admin moderation
 if (testimonySubmitRoute)       app.use('/api/public/testimony', testimonySubmitRoute);
 if (adminTestimonyRoute)        app.use('/api/admin/testimony-submissions', adminAuth, adminTestimonyRoute);
-
+if (adminYoutubeRoute)          app.use('/api/admin/youtube', adminYoutubeRoute);
 const uploadsDir = process.env.UPLOADS_DIR ||
   path.join((env && env.dataDir) || '/opt/render/project/src/data', 'uploads');
 try {

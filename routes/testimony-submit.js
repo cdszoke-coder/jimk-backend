@@ -1,28 +1,28 @@
 // routes/testimony-submit.js
 // Public multi-format testimony submission endpoint.
-// Mount at: app.use('/api/public/testimony', require('./routes/testimony-submit'));
+// Files are written into the same /uploads dir the rest of the backend uses,
+// served back via /uploads/... (absolute URL).
 
 const path = require('path');
 const fs = require('fs');
 const express = require('express');
 const multer = require('multer');
 
-const DATA_DIR = process.env.JIMK_DATA_DIR || '/opt/render/project/src/data';
-const UPLOAD_DIRS = {
-  video:  path.join(DATA_DIR, 'testimony-video'),
-  audio:  path.join(DATA_DIR, 'testimony-audio'),
-  photo:  path.join(DATA_DIR, 'testimony-photo'),
-};
-Object.values(UPLOAD_DIRS).forEach(p => fs.mkdirSync(p, { recursive: true }));
-
 const router = express.Router();
+
+function ensureDir(p) { try { fs.mkdirSync(p, { recursive: true }); } catch (_) {} }
 
 const storage = multer.diskStorage({
   destination(req, file, cb) {
-    let dir = UPLOAD_DIRS.photo;
-    if (file.fieldname === 'video_file') dir = UPLOAD_DIRS.video;
-    else if (file.fieldname === 'audio_file') dir = UPLOAD_DIRS.audio;
-    else if (file.fieldname === 'photo_file') dir = UPLOAD_DIRS.photo;
+    const baseDir = req.app.get('uploadsDir') ||
+      process.env.UPLOADS_DIR ||
+      '/opt/render/project/src/data/uploads';
+    let sub = 'testimony-photo';
+    if (file.fieldname === 'video_file') sub = 'testimony-video';
+    else if (file.fieldname === 'audio_file') sub = 'testimony-audio';
+    else if (file.fieldname === 'photo_file') sub = 'testimony-photo';
+    const dir = path.join(baseDir, sub);
+    ensureDir(dir);
     cb(null, dir);
   },
   filename(req, file, cb) {
@@ -43,9 +43,12 @@ const upload = multer({
 
 function publicUrlFor(req, absPath) {
   if (!absPath) return null;
-  const rel = path.relative(DATA_DIR, absPath).replace(/\\/g, '/');
+  const baseDir = req.app.get('uploadsDir') ||
+    process.env.UPLOADS_DIR ||
+    '/opt/render/project/src/data/uploads';
+  const rel = path.relative(baseDir, absPath).replace(/\\/g, '/');
   const base = (process.env.PUBLIC_BACKEND_URL || `${req.protocol}://${req.get('host')}`).replace(/\/$/, '');
-  return `${base}/data/${rel}`;
+  return `${base}/uploads/${rel}`;
 }
 
 function clean(s, max = 5000) {
@@ -58,6 +61,8 @@ function clean(s, max = 5000) {
 router.post('/', upload, (req, res) => {
   try {
     const db = req.app.get('db');
+    if (!db) return res.status(500).json({ error: 'database not ready' });
+
     const b = req.body || {};
     const format = clean(b.format, 20);
     const validFormats = ['video','written','audio','photo','pending'];

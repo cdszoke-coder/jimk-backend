@@ -1,5 +1,5 @@
 // routes/admin-testimony.js
-// Admin moderation for multi-format testimony submissions.
+// Admin moderation for multi-format testimony submissions stored in testimony_intake.
 
 const express = require('express');
 const { getDb } = require('../db/client');
@@ -9,7 +9,7 @@ router.get('/', (req, res) => {
   const db = getDb();
   const status = req.query.status || 'pending';
   const rows = db.prepare(`
-    SELECT * FROM testimony_submissions
+    SELECT * FROM testimony_intake
     WHERE status = ?
     ORDER BY created_at DESC
     LIMIT 200
@@ -19,7 +19,7 @@ router.get('/', (req, res) => {
 
 router.get('/:id', (req, res) => {
   const db = getDb();
-  const row = db.prepare('SELECT * FROM testimony_submissions WHERE id = ?').get(req.params.id);
+  const row = db.prepare('SELECT * FROM testimony_intake WHERE id = ?').get(req.params.id);
   if (!row) return res.status(404).json({ error: 'Not found' });
   res.json({ item: row });
 });
@@ -39,31 +39,28 @@ router.patch('/:id', (req, res) => {
   if (!fields.length) return res.json({ ok: true });
   fields.push(`updated_at = datetime('now')`);
   vals.push(req.params.id);
-  db.prepare(`UPDATE testimony_submissions SET ${fields.join(', ')} WHERE id = ?`).run(...vals);
+  db.prepare(`UPDATE testimony_intake SET ${fields.join(', ')} WHERE id = ?`).run(...vals);
   res.json({ ok: true });
 });
 
 /**
  * POST /:id/approve
- * Body: { display_name?, location?, short_quote?, item_codes: [], reuse_owner_id? }
- *
- * NOTE: This route currently only flips status to 'approved' on the submission row.
- * Cross-linking to the wall table (and QR code attachment) will be wired up once we
- * confirm the actual wall table name in this database.
+ * Currently only flips status to 'approved' on the intake row.
+ * Wall publishing will be wired up once we confirm the actual wall table name.
  */
 router.post('/:id/approve', (req, res) => {
   const db = getDb();
-  const sub = db.prepare('SELECT * FROM testimony_submissions WHERE id = ?').get(req.params.id);
+  const sub = db.prepare('SELECT * FROM testimony_intake WHERE id = ?').get(req.params.id);
   if (!sub) return res.status(404).json({ error: 'Submission not found' });
   if (sub.status === 'approved') return res.status(400).json({ error: 'Already approved' });
 
   try {
     db.prepare(`
-      UPDATE testimony_submissions
+      UPDATE testimony_intake
       SET status = 'approved', updated_at = datetime('now')
       WHERE id = ?
     `).run(sub.id);
-    res.json({ ok: true, note: 'Marked approved. Wall publishing will be enabled once wall table is confirmed.' });
+    res.json({ ok: true, note: 'Marked approved. Wall publishing will be enabled once the wall table is confirmed.' });
   } catch (e) {
     console.error('approve error:', e);
     res.status(500).json({ error: 'Approve failed' });

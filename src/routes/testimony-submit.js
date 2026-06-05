@@ -1,7 +1,7 @@
 // routes/testimony-submit.js
 // Public multi-format testimony submission endpoint.
-// Files are written into the same /uploads dir the rest of the backend uses,
-// served back via /uploads/... (absolute URL).
+// Writes into the testimony_intake table (separate from the legacy testimony_submissions
+// table used by the existing dashboard).
 
 const path = require('path');
 const fs = require('fs');
@@ -35,7 +35,7 @@ const storage = multer.diskStorage({
 
 const upload = multer({
   storage,
-  limits: { fileSize: 200 * 1024 * 1024 }, // 200MB cap
+  limits: { fileSize: 200 * 1024 * 1024 },
 }).fields([
   { name: 'video_file', maxCount: 1 },
   { name: 'audio_file', maxCount: 1 },
@@ -115,7 +115,7 @@ router.post('/', upload, (req, res) => {
     }
 
     const stmt = db.prepare(`
-      INSERT INTO testimony_submissions (
+      INSERT INTO testimony_intake (
         display_name, location, discovery_source, qr_code, format, short_quote,
         video_file_url, video_link_url, written_body, audio_url, photo_url, photo_caption,
         contact_email, consent_lord, consent_publish

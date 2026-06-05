@@ -1,8 +1,8 @@
 // routes/admin-testimony.js
 // Admin moderation for multi-format testimony submissions stored in testimony_intake.
 // Approve creates an owner_profile (wall record) and attaches selected QR codes.
-// Reject also hides any wall record that was previously created from this submission,
-// so rejected testimonies don't leave broken cards on the wall.
+// Reject / Archive also hide the linked wall record so it falls off the public wall.
+// Also exposes simple wall-cleanup endpoints for archiving owner_profiles records.
 
 const express = require('express');
 const { getDb } = require('../db/client');
@@ -36,7 +36,6 @@ function youtubeEmbed(url) {
   return url;
 }
 
-// Hide the wall record (owner_profile) that was created from a given intake row.
 function hideLinkedOwnerProfile(db, intakeRow) {
   if (!intakeRow || !intakeRow.approved_owner_id) return;
   db.prepare(`
@@ -58,14 +57,14 @@ router.get('/', (req, res) => {
   res.json({ items: rows });
 });
 
-router.get('/:id', (req, res) => {
+router.get('/:id(\\d+)', (req, res) => {
   const db = getDb();
   const row = db.prepare('SELECT * FROM testimony_intake WHERE id = ?').get(req.params.id);
   if (!row) return res.status(404).json({ error: 'Not found' });
   res.json({ item: row });
 });
 
-router.patch('/:id', (req, res) => {
+router.patch('/:id(\\d+)', (req, res) => {
   const db = getDb();
   const { admin_notes, short_quote, status } = req.body || {};
   const allowed = ['pending','approved','rejected','archived'];
@@ -85,7 +84,6 @@ router.patch('/:id', (req, res) => {
   vals.push(req.params.id);
   db.prepare(`UPDATE testimony_intake SET ${fields.join(', ')} WHERE id = ?`).run(...vals);
 
-  // If we just rejected or archived, also remove the wall record (if any).
   if (status === 'rejected' || status === 'archived') {
     hideLinkedOwnerProfile(db, intake);
   }
@@ -93,15 +91,7 @@ router.patch('/:id', (req, res) => {
   res.json({ ok: true });
 });
 
-/**
- * POST /:id/approve
- * Body: {
- *   display_name?, location?, short_quote?,
- *   item_codes: ["JIMK-SHARE-XXXX", ...],
- *   reuse_owner_id?: number
- * }
- */
-router.post('/:id/approve', (req, res) => {
+router.post('/:id(\\d+)/approve', (req, res) => {
   const db = getDb();
   const sub = db.prepare('SELECT * FROM testimony_intake WHERE id = ?').get(req.params.id);
   if (!sub) return res.status(404).json({ error: 'Submission not found' });
@@ -164,7 +154,6 @@ router.post('/:id/approve', (req, res) => {
         });
         ownerId = Number(ins.lastInsertRowid);
       } else {
-        // Bring a reused owner back to active in case they were archived before.
         db.prepare(`UPDATE owner_profiles SET status='active', updated_at=CURRENT_TIMESTAMP WHERE id = ?`).run(ownerId);
       }
 
@@ -194,6 +183,59 @@ router.post('/:id/approve', (req, res) => {
   } catch (e) {
     console.error('approve error:', e);
     res.status(500).json({ error: e.message || 'Approve failed' });
+  }
+});
+
+/* ============================================================
+ * WALL CLEANUP — archive owner_profiles rows so they fall off
+ * the public wall (status changes to 'archived'; nothing is deleted).
+ * ============================================================ */
+
+// Archive all active wall records at once (cleans up duplicates/stale rows).
+router.post('/wall/archive-all', (req, res) => {
+  const db = getDb();
+  try {
+    const info = db.prepare(`
+      UPDATE owner_profiles
+      SET status = 'archived', updated_at = CURRENT_TIMESTAMP
+      WHERE status = 'active'
+    `).run();
+    res.json({ ok: true, archived: info.changes });
+  } catch (e) {
+    console.error('wall archive-all error:', e);
+    res.status(500).json({ error: e.message || 'archive-all failed' });
+  }
+});
+
+// Archive a single wall record by owner_profile id.
+router.post('/wall/:id(\\d+)/archive', (req, res) => {
+  const db = getDb();
+  try {
+    const info = db.prepare(`
+      UPDATE owner_profiles
+      SET status = 'archived', updated_at = CURRENT_TIMESTAMP
+      WHERE id = ?
+    `).run(req.params.id);
+    res.json({ ok: true, archived: info.changes });
+  } catch (e) {
+    console.error('wall archive one error:', e);
+    res.status(500).json({ error: e.message || 'archive failed' });
+  }
+});
+
+// Restore a single wall record (sets it back to 'active').
+router.post('/wall/:id(\\d+)/restore', (req, res) => {
+  const db = getDb();
+  try {
+    const info = db.prepare(`
+      UPDATE owner_profiles
+      SET status = 'active', updated_at = CURRENT_TIMESTAMP
+      WHERE id = ?
+    `).run(req.params.id);
+    res.json({ ok: true, restored: info.changes });
+  } catch (e) {
+    console.error('wall restore error:', e);
+    res.status(500).json({ error: e.message || 'restore failed' });
   }
 });
 

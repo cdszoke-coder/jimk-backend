@@ -2,42 +2,7 @@
 
 /**
  * Bridges the new YouTube testimony system to the existing QR/owner system.
- *
- * Endpoints (admin, require x-admin-key):
- *   GET  /api/admin/youtube/testimonies/:id/approve-options
- *     Returns:
- *       {
- *         submission: { id, submitted_name, submitted_email, youtube_video_id,
- *                       youtube_url, youtube_embed_url, permission_public, ... },
- *         existing_owner_videos: [
- *           { owner_id, owner_slug, display_name, public_video_url, embed_video_url }
- *         ],
- *         available_item_codes: [
- *           { id, item_code, current_owner_id, current_owner_name }
- *         ]
- *       }
- *
- *   POST /api/admin/youtube/testimonies/:id/approve-link
- *     body: {
- *       item_codes: ["JIMK-SHARE-0001", "JIMK-SHARE-0002", ...],
- *       use_existing_owner_video: true|false,
- *       existing_owner_id: <id> (required if use_existing_owner_video=true),
- *       make_public: true|false,
- *       admin_notes: "..."
- *     }
- *
- *     Behavior:
- *       1) Resolve target video:
- *          - If use_existing_owner_video=true: pull video URLs from that owner record.
- *          - Else: use the new YouTube video uploaded with this submission.
- *       2) Create/find an owner profile for submitted_name (or reuse existing_owner_id).
- *          Owner's public_video_url + embed_video_url is set to the chosen video.
- *       3) Attach all selected item_codes to that owner (force reassign if needed).
- *       4) Mark the youtube testimony submission as approved.
- *       5) If make_public + permission_public, flip new YouTube video to Public.
- *
- *   GET  /api/public/testimony-wall
- *     Lists recent approved owners (with a public video) for the movement page wall.
+ * (See repo history for full route doc.)
  */
 
 const express = require('express');
@@ -86,7 +51,6 @@ router.get('/admin/youtube/testimonies/:id/approve-options', adminAuth, (req, re
   const sub = db.prepare('SELECT * FROM testimony_video_uploads WHERE id = ?').get(req.params.id);
   if (!sub) return res.status(404).json({ error: 'submission not found' });
 
-  // Existing owners matching submitter (by email first, then by name) that already have a video.
   let owners = [];
   if (sub.submitted_email) {
     owners = db.prepare(`SELECT id AS owner_id, slug AS owner_slug, display_name,
@@ -103,7 +67,6 @@ router.get('/admin/youtube/testimonies/:id/approve-options', adminAuth, (req, re
       ORDER BY updated_at DESC`).all(sub.submitted_name);
   }
 
-  // All item codes (with current owner), so admin can pick multiple to attach.
   const codes = db.prepare(`SELECT c.id, c.item_code, c.owner_profile_id AS current_owner_id,
       o.display_name AS current_owner_name
     FROM testimony_item_codes c
@@ -134,7 +97,6 @@ router.post('/admin/youtube/testimonies/:id/approve-link', adminAuth, async (req
   const makePublic = !!body.make_public;
   const adminNotes = body.admin_notes ? String(body.admin_notes).slice(0, 1000) : null;
 
-  // Decide which video URLs to use
   let publicUrl = sub.youtube_url;
   let embedUrl  = sub.youtube_embed_url;
   let chosenOwnerForVideo = null;
@@ -149,12 +111,10 @@ router.post('/admin/youtube/testimonies/:id/approve-link', adminAuth, async (req
 
   if (!publicUrl) return res.status(400).json({ error: 'no video to link' });
 
-  // Find or create the owner record we're going to attach codes to.
   let owner;
   if (useExisting && chosenOwnerForVideo) {
     owner = chosenOwnerForVideo;
   } else {
-    // Try to find existing owner by email or name; otherwise create one.
     if (sub.submitted_email) {
       owner = db.prepare('SELECT * FROM owner_profiles WHERE email = ?').get(sub.submitted_email);
     }
@@ -172,7 +132,6 @@ router.post('/admin/youtube/testimonies/:id/approve-link', adminAuth, async (req
       );
       owner = db.prepare('SELECT * FROM owner_profiles WHERE id = ?').get(info.lastInsertRowid);
     } else {
-      // Existing owner found — update their video to the new one
       db.prepare(`UPDATE owner_profiles
         SET public_video_url = ?, embed_video_url = ?,
             testimony_summary = COALESCE(testimony_summary, ?),
@@ -182,11 +141,9 @@ router.post('/admin/youtube/testimonies/:id/approve-link', adminAuth, async (req
     }
   }
 
-  // Attach every selected item code to this owner (force reassignment if needed)
   const attached = [];
   const skipped = [];
   for (const code of itemCodes) {
-    // Make sure code exists; create if missing
     let row = db.prepare('SELECT * FROM testimony_item_codes WHERE item_code = ?').get(code);
     if (!row) {
       const info = db.prepare(`INSERT INTO testimony_item_codes (item_code, owner_profile_id, destination_mode)
@@ -200,7 +157,6 @@ router.post('/admin/youtube/testimonies/:id/approve-link', adminAuth, async (req
     attached.push({ code, id: row.id, was_new: false });
   }
 
-  // Optionally flip the new YouTube video to public
   let finalPrivacy = sub.privacy_status || 'unlisted';
   if (makePublic && sub.permission_public && sub.youtube_video_id && !useExisting) {
     try {
@@ -209,7 +165,6 @@ router.post('/admin/youtube/testimonies/:id/approve-link', adminAuth, async (req
     } catch (e) { /* keep unlisted on failure */ }
   }
 
-  // Mark the youtube testimony approved
   db.prepare(`UPDATE testimony_video_uploads
     SET review_status='approved',
         admin_notes = COALESCE(?, admin_notes),
@@ -232,17 +187,41 @@ router.post('/admin/youtube/testimonies/:id/approve-link', adminAuth, async (req
 });
 
 /* ============================================================
- * PUBLIC: testimony wall (approved owners with a video)
+ * PUBLIC: testimony wall — returns approved owners across ALL formats
+ * (video, written, audio, photo). Multi-format columns are returned
+ * with COALESCE so older rows missing those columns still work.
  * ============================================================ */
 router.get('/public/testimony-wall', (req, res) => {
   const db = getDb();
-  const rows = db.prepare(`SELECT display_name, slug, public_video_url, embed_video_url,
-      short_quote, testimony_summary, updated_at
+
+  // Detect optional multi-format columns so the query works on either schema.
+  const cols = db.prepare('PRAGMA table_info(owner_profiles)').all().map(c => c.name);
+  const has = (c) => cols.includes(c);
+
+  const selectParts = [
+    'id',
+    'display_name',
+    'slug',
+    'public_video_url',
+    'embed_video_url',
+    'short_quote',
+    'testimony_summary',
+    'updated_at',
+    has('format')        ? 'format'        : `'video'  AS format`,
+    has('written_body')  ? 'written_body'  : `NULL    AS written_body`,
+    has('audio_url')     ? 'audio_url'     : `NULL    AS audio_url`,
+    has('photo_url')     ? 'photo_url'     : `NULL    AS photo_url`,
+    has('photo_caption') ? 'photo_caption' : `NULL    AS photo_caption`,
+  ];
+
+  const rows = db.prepare(`
+    SELECT ${selectParts.join(', ')}
     FROM owner_profiles
     WHERE status = 'active'
-      AND public_video_url IS NOT NULL AND public_video_url != ''
     ORDER BY updated_at DESC
-    LIMIT 24`).all();
+    LIMIT 48
+  `).all();
+
   res.json({ items: rows });
 });
 

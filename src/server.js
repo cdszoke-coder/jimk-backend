@@ -57,7 +57,7 @@ const youtubeLinkRoutes       = safeRequireRouter('./routes/youtube_link');
 const welcomeRoutes           = safeRequireRouter('./routes/welcome');
 const testimonySubmitRoute    = safeRequireRouter('./routes/testimony-submit');
 const adminTestimonyRoute     = safeRequireRouter('./routes/admin-testimony');
-
+const adminYoutubeRoute       = safeRequireRouter('./routes/admin-youtube'); 
 const app = express();
 app.use(cors());
 app.use(express.json({ limit: '1mb' }));

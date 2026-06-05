@@ -66,7 +66,7 @@ router.get('/:id(\\d+)', (req, res) => {
 
 router.patch('/:id(\\d+)', (req, res) => {
   const db = getDb();
-  const { admin_notes, short_quote, status } = req.body || {};
+  const { admin_notes, short_quote, status, video_link_url } = req.body || {};
   const allowed = ['pending','approved','rejected','archived'];
   const intake = db.prepare('SELECT * FROM testimony_intake WHERE id = ?').get(req.params.id);
   if (!intake) return res.status(404).json({ error: 'Not found' });
@@ -75,6 +75,7 @@ router.patch('/:id(\\d+)', (req, res) => {
   const vals = [];
   if (admin_notes !== undefined) { fields.push('admin_notes = ?'); vals.push(String(admin_notes || '').slice(0, 2000)); }
   if (short_quote !== undefined) { fields.push('short_quote = ?'); vals.push(String(short_quote || '').slice(0, 200)); }
+  if (video_link_url !== undefined) { fields.push('video_link_url = ?'); vals.push(String(video_link_url || '').slice(0, 600)); }
   if (status !== undefined) {
     if (!allowed.includes(status)) return res.status(400).json({ error: 'Bad status' });
     fields.push('status = ?'); vals.push(status);

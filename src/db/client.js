@@ -35,11 +35,6 @@ function tableExists(database, table) {
   }
 }
 
-/**
- * Runs BEFORE schema.sql so schema.sql doesn't crash on stale/broken tables.
- * If testimony_submissions exists but lacks review_status (left over from a
- * previous migration), drop it so schema.sql can recreate it correctly.
- */
 function earlyRepair(database) {
   try {
     if (tableExists(database, 'testimony_submissions')
@@ -52,11 +47,6 @@ function earlyRepair(database) {
   }
 }
 
-/**
- * Ensures the multi-format intake table exists (independent of the legacy
- * testimony_submissions). This is the table the public testimony.html form
- * writes into.
- */
 function ensureIntakeTable(database) {
   try {
     database.exec(`
@@ -93,6 +83,30 @@ function ensureIntakeTable(database) {
   }
 }
 
+/**
+ * Light migration: add multi-format columns to owner_profiles so non-video
+ * testimonies (written / audio / photo) can be published to the wall.
+ */
+function migrateOwnerProfilesMultiformat(database) {
+  try {
+    const adds = [
+      { col: 'format',        ddl: "ALTER TABLE owner_profiles ADD COLUMN format TEXT NOT NULL DEFAULT 'video'" },
+      { col: 'written_body',  ddl: "ALTER TABLE owner_profiles ADD COLUMN written_body TEXT" },
+      { col: 'audio_url',     ddl: "ALTER TABLE owner_profiles ADD COLUMN audio_url TEXT" },
+      { col: 'photo_url',     ddl: "ALTER TABLE owner_profiles ADD COLUMN photo_url TEXT" },
+      { col: 'photo_caption', ddl: "ALTER TABLE owner_profiles ADD COLUMN photo_caption TEXT" },
+    ];
+    for (const { col, ddl } of adds) {
+      if (!columnExists(database, 'owner_profiles', col)) {
+        database.exec(ddl);
+        console.log('[client] owner_profiles +column:', col);
+      }
+    }
+  } catch (error) {
+    console.warn('[client] migrateOwnerProfilesMultiformat warning:', error.message);
+  }
+}
+
 function runLightMigrations(database) {
   try {
     if (!columnExists(database, 'artist_profiles', 'portrait_image_url')) {
@@ -116,6 +130,7 @@ function initDatabase() {
   execFile(db, path.join(__dirname, 'seed.sql'));
   runLightMigrations(db);
   ensureIntakeTable(db);
+  migrateOwnerProfilesMultiformat(db);
   const sql2Path = path.join(__dirname, 'schema_youtube.sql');
   if (fs.existsSync(sql2Path)) {
     db.exec(fs.readFileSync(sql2Path, 'utf8'));

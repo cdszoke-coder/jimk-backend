@@ -52,6 +52,47 @@ function earlyRepair(database) {
   }
 }
 
+/**
+ * Ensures the multi-format intake table exists (independent of the legacy
+ * testimony_submissions). This is the table the public testimony.html form
+ * writes into.
+ */
+function ensureIntakeTable(database) {
+  try {
+    database.exec(`
+      CREATE TABLE IF NOT EXISTS testimony_intake (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        display_name      TEXT NOT NULL,
+        location          TEXT,
+        discovery_source  TEXT CHECK (discovery_source IN ('shirt','sticker','qr','friend','other')),
+        qr_code           TEXT,
+        format            TEXT NOT NULL CHECK (format IN ('video','written','audio','photo','pending')),
+        short_quote       TEXT,
+        video_file_url    TEXT,
+        video_link_url    TEXT,
+        written_body      TEXT,
+        audio_url         TEXT,
+        photo_url         TEXT,
+        photo_caption     TEXT,
+        contact_email     TEXT,
+        consent_lord      INTEGER NOT NULL DEFAULT 0,
+        consent_publish   INTEGER NOT NULL DEFAULT 0,
+        status            TEXT NOT NULL DEFAULT 'pending'
+                          CHECK (status IN ('pending','approved','rejected','archived')),
+        admin_notes       TEXT,
+        approved_owner_id INTEGER,
+        created_at        TEXT NOT NULL DEFAULT (datetime('now')),
+        updated_at        TEXT NOT NULL DEFAULT (datetime('now'))
+      );
+      CREATE INDEX IF NOT EXISTS idx_testimony_intake_status  ON testimony_intake(status);
+      CREATE INDEX IF NOT EXISTS idx_testimony_intake_format  ON testimony_intake(format);
+      CREATE INDEX IF NOT EXISTS idx_testimony_intake_created ON testimony_intake(created_at DESC);
+    `);
+  } catch (error) {
+    console.warn('[client] ensureIntakeTable warning:', error.message);
+  }
+}
+
 function runLightMigrations(database) {
   try {
     if (!columnExists(database, 'artist_profiles', 'portrait_image_url')) {
@@ -74,6 +115,7 @@ function initDatabase() {
   execFile(db, path.join(__dirname, 'schema.sql'));
   execFile(db, path.join(__dirname, 'seed.sql'));
   runLightMigrations(db);
+  ensureIntakeTable(db);
   const sql2Path = path.join(__dirname, 'schema_youtube.sql');
   if (fs.existsSync(sql2Path)) {
     db.exec(fs.readFileSync(sql2Path, 'utf8'));

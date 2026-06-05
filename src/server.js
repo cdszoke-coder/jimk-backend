@@ -38,13 +38,25 @@ function safeRequireSplit(p) {
   }
 }
 
-const corePublic          = asRouter(publicRoutes, './routes/public');
-const coreAdmin           = asRouter(adminRoutes,  './routes/admin');
-const artistsSplit        = safeRequireSplit('./routes/artists');         // { publicRouter, adminRouter }
-const youtubeRoutes       = safeRequireRouter('./routes/youtube');
-const artistYoutubeRoutes = safeRequireRouter('./routes/artists_youtube');
-const youtubeLinkRoutes   = safeRequireRouter('./routes/youtube_link');
-const welcomeRoutes       = safeRequireRouter('./routes/welcome');
+// Simple admin-key middleware (header: x-admin-key) — used to protect the new
+// admin testimony moderation route. Reads from process.env.ADMIN_API_KEY.
+function adminAuth(req, res, next) {
+  const key = req.get('x-admin-key') || req.query.admin_key || '';
+  if (!process.env.ADMIN_API_KEY || key !== process.env.ADMIN_API_KEY) {
+    return res.status(401).json({ error: 'unauthorized' });
+  }
+  next();
+}
+
+const corePublic              = asRouter(publicRoutes, './routes/public');
+const coreAdmin               = asRouter(adminRoutes,  './routes/admin');
+const artistsSplit            = safeRequireSplit('./routes/artists');         // { publicRouter, adminRouter }
+const youtubeRoutes           = safeRequireRouter('./routes/youtube');
+const artistYoutubeRoutes     = safeRequireRouter('./routes/artists_youtube');
+const youtubeLinkRoutes       = safeRequireRouter('./routes/youtube_link');
+const welcomeRoutes           = safeRequireRouter('./routes/welcome');
+const testimonySubmitRoute    = safeRequireRouter('./routes/testimony-submit');
+const adminTestimonyRoute     = safeRequireRouter('./routes/admin-testimony');
 
 const app = express();
 app.use(cors());
@@ -62,6 +74,10 @@ if (artistYoutubeRoutes)        app.use('/api', artistYoutubeRoutes);
 if (youtubeLinkRoutes)          app.use('/api', youtubeLinkRoutes);
 if (welcomeRoutes)              app.use('/api', welcomeRoutes);
 
+// Multi-format testimony submission (public) + admin moderation
+if (testimonySubmitRoute)       app.use('/api/public/testimony', testimonySubmitRoute);
+if (adminTestimonyRoute)        app.use('/api/admin/testimony-submissions', adminAuth, adminTestimonyRoute);
+
 const uploadsDir = process.env.UPLOADS_DIR ||
   path.join((env && env.dataDir) || '/opt/render/project/src/data', 'uploads');
 try {
@@ -71,6 +87,9 @@ try {
 } catch (e) {
   console.warn('[server] could not set up /uploads:', e.message);
 }
+
+// Expose the uploads dir to the testimony route so it writes into the same place
+app.set('uploadsDir', uploadsDir);
 
 const publicDir = path.join(__dirname, '..', 'public');
 if (fs.existsSync(publicDir)) {

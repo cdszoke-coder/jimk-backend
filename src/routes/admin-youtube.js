@@ -180,6 +180,48 @@ router.post('/upload/:submissionId', async (req, res) => {
   }
 });
 
+router.delete('/videos/:videoId', async (req, res) => {
+  if (!ensureService(res)) return;
+  const videoId = String(req.params.videoId || '').trim();
+  if (!videoId) return res.status(400).json({ error: 'bad_video_id' });
+  try {
+    if (typeof yt.deleteVideo !== 'function') return res.status(500).json({ error: 'deleteVideo_missing' });
+    await yt.deleteVideo(videoId);
+
+    // Clear video_link_url from any testimony_intake row that pointed at it
+    const db = getDbSafe();
+    if (db) {
+      try {
+        db.prepare(`
+          UPDATE testimony_intake
+             SET video_link_url = NULL,
+                 updated_at = datetime('now')
+           WHERE video_link_url LIKE ?
+        `).run('%' + videoId + '%');
+      } catch (uErr) {
+        console.warn('[admin-youtube] intake clear failed:', uErr.message);
+      }
+      // Also clear from any owner_profiles row already published
+      try {
+        db.prepare(`
+          UPDATE owner_profiles
+             SET public_video_url = NULL,
+                 embed_video_url = NULL,
+                 updated_at = datetime('now')
+           WHERE public_video_url LIKE ? OR embed_video_url LIKE ?
+        `).run('%' + videoId + '%', '%' + videoId + '%');
+      } catch (uErr) {
+        console.warn('[admin-youtube] owner_profiles clear failed:', uErr.message);
+      }
+    }
+
+    res.json({ ok: true, video_id: videoId, deleted: true });
+  } catch (err) {
+    console.error('[admin-youtube] delete error:', err);
+    res.status(500).json({ error: 'delete_failed', message: err.message });
+  }
+});
+
 router.post('/videos/:videoId/privacy', async (req, res) => {
   if (!ensureService(res)) return;
   const videoId = String(req.params.videoId || '').trim();

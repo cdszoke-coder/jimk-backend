@@ -57,7 +57,9 @@ const youtubeLinkRoutes       = safeRequireRouter('./routes/youtube_link');
 const welcomeRoutes           = safeRequireRouter('./routes/welcome');
 const testimonySubmitRoute    = safeRequireRouter('./routes/testimony-submit');
 const adminTestimonyRoute     = safeRequireRouter('./routes/admin-testimony');
-const adminYoutubeRoute       = safeRequireRouter('./routes/admin-youtube'); 
+const adminYoutubeRoute       = safeRequireRouter('./routes/admin-youtube');
+const runClubRoute            = safeRequireRouter('./routes/run-club');
+
 const app = express();
 app.use(cors());
 app.use(express.json({ limit: '1mb' }));
@@ -75,6 +77,7 @@ if (youtubeLinkRoutes)          app.use('/api', youtubeLinkRoutes);
 if (welcomeRoutes)              app.use('/api', welcomeRoutes);
 
 // Multi-format testimony submission (public) + admin moderation
+if (runClubRoute)               app.use('/api', runClubRoute);
 if (testimonySubmitRoute)       app.use('/api/public/testimony', testimonySubmitRoute);
 if (adminTestimonyRoute)        app.use('/api/admin/testimony-submissions', adminAuth, adminTestimonyRoute);
 if (adminYoutubeRoute)          app.use('/api/admin/youtube', adminYoutubeRoute);

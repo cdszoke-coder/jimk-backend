@@ -198,8 +198,8 @@ router.post('/youtube-init', express.json({ limit: '64kb' }), async (req, res) =
     });
     if (!session || !session.uploadUrl) return res.status(500).json({ error: 'Could not start YouTube upload session' });
 
-    // Create the intake row up front in pending_upload status so we can correlate
-    // the eventual finalize call to a known submission.
+    // Create the intake row up front (status='pending' to satisfy the CHECK constraint).
+    // We tag admin_notes so moderators can see the upload is in progress.
     const stmt = db.prepare(`
       INSERT INTO testimony_intake (
         display_name, location, discovery_source, qr_code, format, short_quote,
@@ -208,12 +208,13 @@ router.post('/youtube-init', express.json({ limit: '64kb' }), async (req, res) =
       ) VALUES (
         @display_name, @location, @discovery_source, @qr_code, 'video', @short_quote,
         NULL, NULL, NULL, NULL, NULL, NULL,
-        @contact_email, @consent_lord, @consent_publish, 'pending_upload', @admin_notes
+        @contact_email, @consent_lord, @consent_publish, 'pending', @admin_notes
       )
     `);
-    const featureNote = wants_feature
+    const featurePref = wants_feature
       ? 'Submitter consented to being featured publicly.'
       : 'Submitter did NOT consent to being featured publicly — keep Private/Unlisted.';
+    const featureNote = '[AWAITING UPLOAD] ' + featurePref;
     const result = stmt.run({
       display_name, location, discovery_source, qr_code, short_quote,
       contact_email, consent_lord, consent_publish, admin_notes: featureNote
@@ -250,13 +251,20 @@ router.post('/youtube-finalize', express.json({ limit: '64kb' }), async (req, re
 
     const video_link_url = `https://www.youtube.com/watch?v=${videoId}`;
 
+    // Clear the [AWAITING UPLOAD] tag from admin_notes once the video lands.
+    const cleanedNotes = db.prepare("SELECT admin_notes FROM testimony_intake WHERE id = ?").get(intakeId);
+    const newNotes = cleanedNotes && cleanedNotes.admin_notes
+      ? String(cleanedNotes.admin_notes).replace(/^\[AWAITING UPLOAD\]\s*/, '')
+      : null;
+
     db.prepare(`
       UPDATE testimony_intake
          SET video_link_url = ?,
              status = 'pending',
+             admin_notes = ?,
              updated_at = datetime('now')
        WHERE id = ?
-    `).run(video_link_url, intakeId);
+    `).run(video_link_url, newNotes, intakeId);
 
     // Best-effort: add to Testimonials playlist. Non-fatal if it fails.
     if (yt && typeof yt.addVideoToTestimonialsPlaylist === 'function') {

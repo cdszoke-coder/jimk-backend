@@ -182,7 +182,7 @@ router.post('/youtube-init', express.json({ limit: '64kb' }), async (req, res) =
 
     // Always upload as Private. If submitter consents to being featured, admin can
     // later flip it to Unlisted/Public from the moderation modal (Layer 2c controls).
-    const privacyStatus = 'private';
+    const privacyStatus = 'unlisted';
 
     const title = `Shared Testimony: ${display_name}${location ? ' — ' + location : ''}`;
     const description = [

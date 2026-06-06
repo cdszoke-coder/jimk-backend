@@ -438,6 +438,65 @@ async function setVideoPrivacy(videoId, privacyStatus) {
   return true;
 }
 
+// Creates a Google Resumable Upload session and returns the one-time upload URL.
+// The submitter's browser will PUT the video bytes straight to Google — the server
+// never proxies the bytes. The video lands in the connected admin's channel.
+//
+// opts: { title, description, privacyStatus = 'private', fileName, fileSize, contentType }
+// Returns: { uploadUrl }
+async function createResumableUploadSession(opts) {
+  const {
+    title = 'Shared Testimony',
+    description = '',
+    privacyStatus = 'private',
+    fileSize,
+    contentType = 'video/*',
+    tags = ['testimony', 'jesusismykingmovement', 'sharedtestimony']
+  } = opts || {};
+
+  if (!fileSize || !Number.isFinite(Number(fileSize))) {
+    throw new Error('fileSize is required');
+  }
+
+  const accessToken = await getValidAccessToken();
+  const allowed = new Set(['private', 'unlisted', 'public']);
+  const safePrivacy = allowed.has(String(privacyStatus).toLowerCase()) ? String(privacyStatus).toLowerCase() : 'private';
+
+  const metadata = JSON.stringify({
+    snippet: { title, description, tags, categoryId: '22' },
+    status: { privacyStatus: safePrivacy, selfDeclaredMadeForKids: false, embeddable: true }
+  });
+
+  return new Promise((resolve, reject) => {
+    const u = new URL('https://www.googleapis.com/upload/youtube/v3/videos?uploadType=resumable&part=snippet,status');
+    const req = https.request({
+      method: 'POST',
+      hostname: u.hostname,
+      path: u.pathname + u.search,
+      headers: {
+        'Authorization': `Bearer ${accessToken}`,
+        'Content-Type': 'application/json; charset=UTF-8',
+        'Content-Length': Buffer.byteLength(metadata),
+        'X-Upload-Content-Type': contentType,
+        'X-Upload-Content-Length': String(fileSize)
+      }
+    }, (res) => {
+      let data = '';
+      res.on('data', (c) => data += c);
+      res.on('end', () => {
+        if (res.statusCode === 200 && res.headers.location) {
+          resolve({ uploadUrl: res.headers.location, privacy: safePrivacy });
+        } else {
+          reject(new Error(`YT resumable init failed ${res.statusCode}: ${data}`));
+        }
+      });
+    });
+    req.on('error', reject);
+    req.write(metadata);
+    req.end();
+  });
+}
+
 async function deleteVideo(videoId) {
   const accessToken = await getValidAccessToken();
   await googleApi('DELETE',
@@ -457,6 +516,7 @@ module.exports = {
   findOrCreateArtistsPlaylist,
   addVideoToArtistsPlaylist,
   uploadVideoFromPath,
+  createResumableUploadSession,
   setVideoPrivacy,
   deleteVideo,
   SCOPES,

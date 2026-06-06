@@ -1,13 +1,22 @@
 // routes/testimony-submit.js
 // Public multi-format testimony submission endpoint.
-// Writes into the testimony_intake table (separate from the legacy testimony_submissions
-// table used by the existing dashboard).
+//
+// Routes mounted here (under /api/public):
+//   POST /testimony                       — multipart form for written/audio/photo + small video link submissions
+//   POST /testimony/youtube-init          — direct-to-YouTube: returns a one-time Google upload URL + intake row id
+//   POST /testimony/youtube-finalize      — direct-to-YouTube: marks the intake row pending after the browser PUTs the bytes to Google
+//
+// Direct-to-YouTube flow keeps the video bytes off the server entirely.
 
 const path = require('path');
 const fs = require('fs');
 const express = require('express');
 const multer = require('multer');
 const { getDb } = require('../db/client');
+
+let yt = null;
+try { yt = require('../services/youtubeService'); }
+catch (err) { console.warn('[testimony-submit] youtubeService not loaded:', err.message); }
 
 const router = express.Router();
 
@@ -59,6 +68,15 @@ function clean(s, max = 5000) {
   return s.length > max ? s.slice(0, max) : s;
 }
 
+function pickDiscoverySource(v) {
+  return ['shirt','sticker','qr','friend','other'].includes(v) ? v : null;
+}
+
+function boolish(v) {
+  return v === 'true' || v === '1' || v === 'on' || v === true ? 1 : 0;
+}
+
+// ---------- Existing multipart endpoint (written / audio / photo / video-link) ----------
 router.post('/', upload, (req, res) => {
   try {
     const db = getDb();
@@ -67,22 +85,17 @@ router.post('/', upload, (req, res) => {
     const b = req.body || {};
     const format = clean(b.format, 20);
     const validFormats = ['video','written','audio','photo','pending'];
-    if (!validFormats.includes(format)) {
-      return res.status(400).json({ error: 'Invalid format' });
-    }
+    if (!validFormats.includes(format)) return res.status(400).json({ error: 'Invalid format' });
 
     const display_name = clean(b.display_name, 120);
     if (!display_name) return res.status(400).json({ error: 'Name is required' });
 
-    const discovery_source = ['shirt','sticker','qr','friend','other'].includes(b.discovery_source)
-      ? b.discovery_source : null;
+    const discovery_source = pickDiscoverySource(b.discovery_source);
     if (!discovery_source) return res.status(400).json({ error: 'Tell us how you found us' });
 
-    const consent_lord    = b.consent_lord === 'true' || b.consent_lord === '1' || b.consent_lord === 'on' ? 1 : 0;
-    const consent_publish = b.consent_publish === 'true' || b.consent_publish === '1' || b.consent_publish === 'on' ? 1 : 0;
-    if (!consent_lord || !consent_publish) {
-      return res.status(400).json({ error: 'Both consent boxes are required' });
-    }
+    const consent_lord    = boolish(b.consent_lord);
+    const consent_publish = boolish(b.consent_publish);
+    if (!consent_lord || !consent_publish) return res.status(400).json({ error: 'Both consent boxes are required' });
 
     const location    = clean(b.location, 120);
     const qr_code     = clean((b.qr_code || '').toUpperCase(), 60);
@@ -104,15 +117,9 @@ router.post('/', upload, (req, res) => {
     if (format === 'written' && (!written_body || written_body.length < 30)) {
       return res.status(400).json({ error: 'Written testimony must be at least 30 characters' });
     }
-    if (format === 'audio' && !audio_url) {
-      return res.status(400).json({ error: 'Upload an audio file' });
-    }
-    if (format === 'photo' && (!photo_url || !photo_caption)) {
-      return res.status(400).json({ error: 'Upload a photo and add a caption' });
-    }
-    if (format === 'pending' && !contact_email) {
-      return res.status(400).json({ error: 'Email is required so we can follow up' });
-    }
+    if (format === 'audio' && !audio_url) return res.status(400).json({ error: 'Upload an audio file' });
+    if (format === 'photo' && (!photo_url || !photo_caption)) return res.status(400).json({ error: 'Upload a photo and add a caption' });
+    if (format === 'pending' && !contact_email) return res.status(400).json({ error: 'Email is required so we can follow up' });
 
     const stmt = db.prepare(`
       INSERT INTO testimony_intake (
@@ -135,6 +142,133 @@ router.post('/', upload, (req, res) => {
   } catch (e) {
     console.error('testimony submit error:', e);
     return res.status(500).json({ error: 'Submission failed' });
+  }
+});
+
+// ---------- Direct-to-YouTube: STEP 1, init ----------
+// Browser sends form metadata + file size; server asks Google for a one-time upload URL,
+// creates a placeholder testimony_intake row, and returns { upload_url, intake_id }.
+router.post('/youtube-init', express.json({ limit: '64kb' }), async (req, res) => {
+  try {
+    const db = getDb();
+    if (!db) return res.status(500).json({ error: 'database not ready' });
+    if (!yt) return res.status(503).json({ error: 'YouTube service unavailable on server' });
+    if (typeof yt.isConnected === 'function' && !yt.isConnected()) {
+      return res.status(503).json({ error: 'Video uploads are temporarily unavailable. Please try a different format or try again later.' });
+    }
+
+    const b = req.body || {};
+    const display_name = clean(b.display_name, 120);
+    if (!display_name) return res.status(400).json({ error: 'Name is required' });
+
+    const discovery_source = pickDiscoverySource(b.discovery_source);
+    if (!discovery_source) return res.status(400).json({ error: 'Tell us how you found us' });
+
+    const consent_lord    = boolish(b.consent_lord);
+    const consent_publish = boolish(b.consent_publish);
+    if (!consent_lord || !consent_publish) return res.status(400).json({ error: 'Both consent boxes are required' });
+
+    const wants_feature = boolish(b.wants_feature);
+
+    const location    = clean(b.location, 120);
+    const qr_code     = clean((b.qr_code || '').toUpperCase(), 60);
+    const short_quote = clean(b.short_quote, 200);
+    const contact_email = clean(b.contact_email, 200);
+
+    const fileSize = Number(b.file_size);
+    if (!Number.isFinite(fileSize) || fileSize <= 0) return res.status(400).json({ error: 'file_size is required' });
+    if (fileSize > 5 * 1024 * 1024 * 1024) return res.status(413).json({ error: 'Video is too large (max 5 GB).' });
+    const contentType = clean(b.content_type, 80) || 'video/*';
+
+    // Always upload as Private. If submitter consents to being featured, admin can
+    // later flip it to Unlisted/Public from the moderation modal (Layer 2c controls).
+    const privacyStatus = 'private';
+
+    const title = `Shared Testimony: ${display_name}${location ? ' — ' + location : ''}`;
+    const description = [
+      short_quote ? `"${short_quote}"` : '',
+      '',
+      'Shared through JESUS IS MY KING MOVEMENT.',
+      'Post your testimony: https://www.jesusismykingmovement.com/testimony.html'
+    ].filter(Boolean).join('\n');
+
+    const session = await yt.createResumableUploadSession({
+      title, description, privacyStatus,
+      fileSize, contentType
+    });
+    if (!session || !session.uploadUrl) return res.status(500).json({ error: 'Could not start YouTube upload session' });
+
+    // Create the intake row up front in pending_upload status so we can correlate
+    // the eventual finalize call to a known submission.
+    const stmt = db.prepare(`
+      INSERT INTO testimony_intake (
+        display_name, location, discovery_source, qr_code, format, short_quote,
+        video_file_url, video_link_url, written_body, audio_url, photo_url, photo_caption,
+        contact_email, consent_lord, consent_publish, status, admin_notes
+      ) VALUES (
+        @display_name, @location, @discovery_source, @qr_code, 'video', @short_quote,
+        NULL, NULL, NULL, NULL, NULL, NULL,
+        @contact_email, @consent_lord, @consent_publish, 'pending_upload', @admin_notes
+      )
+    `);
+    const featureNote = wants_feature
+      ? 'Submitter consented to being featured publicly.'
+      : 'Submitter did NOT consent to being featured publicly — keep Private/Unlisted.';
+    const result = stmt.run({
+      display_name, location, discovery_source, qr_code, short_quote,
+      contact_email, consent_lord, consent_publish, admin_notes: featureNote
+    });
+
+    return res.json({
+      ok: true,
+      intake_id: result.lastInsertRowid,
+      upload_url: session.uploadUrl,
+      privacy: session.privacy || privacyStatus
+    });
+  } catch (e) {
+    console.error('youtube-init error:', e);
+    return res.status(500).json({ error: 'Could not start video upload', message: e.message });
+  }
+});
+
+// ---------- Direct-to-YouTube: STEP 2, finalize ----------
+// Browser PUT the file to Google directly. When Google returns 200 with the video id,
+// the browser POSTs back here so we can mark the intake row as pending review.
+router.post('/youtube-finalize', express.json({ limit: '64kb' }), async (req, res) => {
+  try {
+    const db = getDb();
+    if (!db) return res.status(500).json({ error: 'database not ready' });
+
+    const b = req.body || {};
+    const intakeId = Number(b.intake_id);
+    const videoId = clean(b.video_id, 64);
+    if (!Number.isFinite(intakeId) || intakeId <= 0) return res.status(400).json({ error: 'intake_id required' });
+    if (!videoId) return res.status(400).json({ error: 'video_id required' });
+
+    const row = db.prepare('SELECT id, status FROM testimony_intake WHERE id = ?').get(intakeId);
+    if (!row) return res.status(404).json({ error: 'submission not found' });
+
+    const video_link_url = `https://www.youtube.com/watch?v=${videoId}`;
+
+    db.prepare(`
+      UPDATE testimony_intake
+         SET video_link_url = ?,
+             status = 'pending',
+             updated_at = datetime('now')
+       WHERE id = ?
+    `).run(video_link_url, intakeId);
+
+    // Best-effort: add to Testimonials playlist. Non-fatal if it fails.
+    if (yt && typeof yt.addVideoToTestimonialsPlaylist === 'function') {
+      yt.addVideoToTestimonialsPlaylist(videoId).catch(err => {
+        console.warn('[youtube-finalize] playlist attach failed:', err.message);
+      });
+    }
+
+    return res.json({ ok: true, id: intakeId, status: 'pending', video_url: video_link_url });
+  } catch (e) {
+    console.error('youtube-finalize error:', e);
+    return res.status(500).json({ error: 'Could not finalize submission', message: e.message });
   }
 });
 

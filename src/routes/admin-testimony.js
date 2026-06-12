@@ -176,7 +176,12 @@ router.post('/:id(\\d+)/approve', (req, res) => {
         `).run({
           slug,
           display_name,
-          email: sub.contact_email || null,
+          // owner_profiles.email has a UNIQUE constraint and is only meant for the
+          // legacy founder seed. Never copy the submitter's contact email here, or
+          // two submissions from the same address (or two NULLs on some SQLite
+          // builds) will collide on approve. Submitter email stays on
+          // testimony_intake.contact_email so decision emails still fire.
+          email: null,
           location,
           public_video_url,
           embed_video_url,

@@ -124,6 +124,14 @@ router.post('/', upload, (req, res) => {
     const photo_caption  = clean(b.photo_caption, 1500);
     const contact_email  = clean(b.contact_email, 200);
 
+    // Six opt-in social links. Stored as NULL when blank — never rendered when empty.
+    const social_instagram = clean(b.social_instagram, 300);
+    const social_tiktok    = clean(b.social_tiktok, 300);
+    const social_youtube   = clean(b.social_youtube, 300);
+    const social_facebook  = clean(b.social_facebook, 300);
+    const social_spotify   = clean(b.social_spotify, 300);
+    const social_website   = clean(b.social_website, 300);
+
     if (format === 'video' && !video_file_url && !video_link_url) {
       return res.status(400).json({ error: 'Upload a video file or paste a video link' });
     }
@@ -138,17 +146,23 @@ router.post('/', upload, (req, res) => {
       INSERT INTO testimony_intake (
         display_name, location, discovery_source, qr_code, format, short_quote,
         video_file_url, video_link_url, written_body, audio_url, photo_url, photo_caption,
-        contact_email, consent_lord, consent_publish
+        contact_email, consent_lord, consent_publish,
+        social_instagram, social_tiktok, social_youtube,
+        social_facebook, social_spotify, social_website
       ) VALUES (
         @display_name, @location, @discovery_source, @qr_code, @format, @short_quote,
         @video_file_url, @video_link_url, @written_body, @audio_url, @photo_url, @photo_caption,
-        @contact_email, @consent_lord, @consent_publish
+        @contact_email, @consent_lord, @consent_publish,
+        @social_instagram, @social_tiktok, @social_youtube,
+        @social_facebook, @social_spotify, @social_website
       )
     `);
     const result = stmt.run({
       display_name, location, discovery_source, qr_code, format, short_quote,
       video_file_url, video_link_url, written_body, audio_url, photo_url, photo_caption,
       contact_email, consent_lord, consent_publish,
+      social_instagram, social_tiktok, social_youtube,
+      social_facebook, social_spotify, social_website,
     });
 
     const intakeId = result.lastInsertRowid;
@@ -157,7 +171,9 @@ router.post('/', upload, (req, res) => {
     fireMailFor({
       id: intakeId, display_name, location, discovery_source, qr_code, format,
       short_quote, video_file_url, video_link_url, written_body, audio_url,
-      photo_url, photo_caption, contact_email
+      photo_url, photo_caption, contact_email,
+      social_instagram, social_tiktok, social_youtube,
+      social_facebook, social_spotify, social_website
     });
 
     return res.json({ ok: true, id: intakeId, status: 'pending' });
@@ -197,6 +213,14 @@ router.post('/youtube-init', express.json({ limit: '64kb' }), async (req, res) =
     const short_quote = clean(b.short_quote, 200);
     const contact_email = clean(b.contact_email, 200);
 
+    // Six opt-in social links (stored as NULL when blank, never rendered when empty).
+    const social_instagram = clean(b.social_instagram, 300);
+    const social_tiktok    = clean(b.social_tiktok, 300);
+    const social_youtube   = clean(b.social_youtube, 300);
+    const social_facebook  = clean(b.social_facebook, 300);
+    const social_spotify   = clean(b.social_spotify, 300);
+    const social_website   = clean(b.social_website, 300);
+
     const fileSize = Number(b.file_size);
     if (!Number.isFinite(fileSize) || fileSize <= 0) return res.status(400).json({ error: 'file_size is required' });
     if (fileSize > 5 * 1024 * 1024 * 1024) return res.status(413).json({ error: 'Video is too large (max 5 GB).' });
@@ -226,11 +250,15 @@ router.post('/youtube-init', express.json({ limit: '64kb' }), async (req, res) =
       INSERT INTO testimony_intake (
         display_name, location, discovery_source, qr_code, format, short_quote,
         video_file_url, video_link_url, written_body, audio_url, photo_url, photo_caption,
-        contact_email, consent_lord, consent_publish, status, admin_notes
+        contact_email, consent_lord, consent_publish, status, admin_notes,
+        social_instagram, social_tiktok, social_youtube,
+        social_facebook, social_spotify, social_website
       ) VALUES (
         @display_name, @location, @discovery_source, @qr_code, 'video', @short_quote,
         NULL, NULL, NULL, NULL, NULL, NULL,
-        @contact_email, @consent_lord, @consent_publish, 'pending', @admin_notes
+        @contact_email, @consent_lord, @consent_publish, 'pending', @admin_notes,
+        @social_instagram, @social_tiktok, @social_youtube,
+        @social_facebook, @social_spotify, @social_website
       )
     `);
     const featurePref = wants_feature
@@ -239,7 +267,9 @@ router.post('/youtube-init', express.json({ limit: '64kb' }), async (req, res) =
     const featureNote = '[AWAITING UPLOAD] ' + featurePref;
     const result = stmt.run({
       display_name, location, discovery_source, qr_code, short_quote,
-      contact_email, consent_lord, consent_publish, admin_notes: featureNote
+      contact_email, consent_lord, consent_publish, admin_notes: featureNote,
+      social_instagram, social_tiktok, social_youtube,
+      social_facebook, social_spotify, social_website
     });
 
     return res.json({

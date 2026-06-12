@@ -207,11 +207,19 @@ router.get('/public/testimony-wall', (req, res) => {
     'short_quote',
     'testimony_summary',
     'updated_at',
-    has('format')        ? 'format'        : `'video'  AS format`,
-    has('written_body')  ? 'written_body'  : `NULL    AS written_body`,
-    has('audio_url')     ? 'audio_url'     : `NULL    AS audio_url`,
-    has('photo_url')     ? 'photo_url'     : `NULL    AS photo_url`,
-    has('photo_caption') ? 'photo_caption' : `NULL    AS photo_caption`,
+    has('format')           ? 'format'           : `'video' AS format`,
+    has('written_body')     ? 'written_body'     : `NULL    AS written_body`,
+    has('audio_url')        ? 'audio_url'        : `NULL    AS audio_url`,
+    has('photo_url')        ? 'photo_url'        : `NULL    AS photo_url`,
+    has('photo_caption')    ? 'photo_caption'    : `NULL    AS photo_caption`,
+    // Opt-in social columns. Returned for story-page rendering only; the wall
+    // card renderer ignores them so wall cards never leak social info.
+    has('social_instagram') ? 'social_instagram' : `NULL    AS social_instagram`,
+    has('social_tiktok')    ? 'social_tiktok'    : `NULL    AS social_tiktok`,
+    has('social_youtube')   ? 'social_youtube'   : `NULL    AS social_youtube`,
+    has('social_facebook')  ? 'social_facebook'  : `NULL    AS social_facebook`,
+    has('social_spotify')   ? 'social_spotify'   : `NULL    AS social_spotify`,
+    has('social_website')   ? 'social_website'   : `NULL    AS social_website`,
   ];
 
   const rows = db.prepare(`

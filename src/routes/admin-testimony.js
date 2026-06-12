@@ -157,20 +157,30 @@ router.post('/:id(\\d+)/approve', (req, res) => {
           embed_video_url  = youtubeEmbed(public_video_url) || public_video_url || '';
         }
 
+        // Build the INSERT dynamically so we only reference social columns if they
+        // exist on this DB. Keeps the route compatible with pre-migration schemas.
+        const ownerCols = db.prepare('PRAGMA table_info(owner_profiles)').all().map(c => c.name);
+        const ownerHas = (c) => ownerCols.includes(c);
+        const socialFields = ['social_instagram','social_tiktok','social_youtube','social_facebook','social_spotify','social_website'];
+        const includeSocials = socialFields.filter(c => ownerHas(c));
+
+        const socialColsSql   = includeSocials.length ? ', ' + includeSocials.join(', ') : '';
+        const socialPlacesSql = includeSocials.length ? ', ' + includeSocials.map(c => '@' + c).join(', ') : '';
+
         const ins = db.prepare(`
           INSERT INTO owner_profiles (
             slug, display_name, email, location,
             public_video_url, embed_video_url,
             short_quote, testimony_summary,
             status,
-            format, written_body, audio_url, photo_url, photo_caption,
+            format, written_body, audio_url, photo_url, photo_caption${socialColsSql},
             created_at, updated_at
           ) VALUES (
             @slug, @display_name, @email, @location,
             @public_video_url, @embed_video_url,
             @short_quote, @testimony_summary,
             'active',
-            @format, @written_body, @audio_url, @photo_url, @photo_caption,
+            @format, @written_body, @audio_url, @photo_url, @photo_caption${socialPlacesSql},
             CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
           )
         `).run({
@@ -192,6 +202,13 @@ router.post('/:id(\\d+)/approve', (req, res) => {
           audio_url:    sub.audio_url    || null,
           photo_url:    sub.photo_url    || null,
           photo_caption: sub.photo_caption || null,
+          // Opt-in social links copied from intake. NULL if submitter left blank.
+          social_instagram: sub.social_instagram || null,
+          social_tiktok:    sub.social_tiktok    || null,
+          social_youtube:   sub.social_youtube   || null,
+          social_facebook:  sub.social_facebook  || null,
+          social_spotify:   sub.social_spotify   || null,
+          social_website:   sub.social_website   || null,
         });
         ownerId = Number(ins.lastInsertRowid);
       } else {

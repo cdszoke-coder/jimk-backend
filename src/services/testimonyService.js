@@ -182,9 +182,27 @@ function resolveItemCode(db, rawItemCode) {
     return { found: false, claimable: false, item_code: null, ...founder };
   }
 
+  // Detect optional multi-format + social columns so the query works on either schema.
+  const ownerCols = db.prepare('PRAGMA table_info(owner_profiles)').all().map(c => c.name);
+  const hasCol = (c) => ownerCols.includes(c);
+  const optionalSelects = [
+    hasCol('format')           ? 'op.format'           : `'video' AS format`,
+    hasCol('written_body')     ? 'op.written_body'     : 'NULL AS written_body',
+    hasCol('audio_url')        ? 'op.audio_url'        : 'NULL AS audio_url',
+    hasCol('photo_url')        ? 'op.photo_url'        : 'NULL AS photo_url',
+    hasCol('photo_caption')    ? 'op.photo_caption'    : 'NULL AS photo_caption',
+    hasCol('social_instagram') ? 'op.social_instagram' : 'NULL AS social_instagram',
+    hasCol('social_tiktok')    ? 'op.social_tiktok'    : 'NULL AS social_tiktok',
+    hasCol('social_youtube')   ? 'op.social_youtube'   : 'NULL AS social_youtube',
+    hasCol('social_facebook')  ? 'op.social_facebook'  : 'NULL AS social_facebook',
+    hasCol('social_spotify')   ? 'op.social_spotify'   : 'NULL AS social_spotify',
+    hasCol('social_website')   ? 'op.social_website'   : 'NULL AS social_website',
+  ].join(', ');
+
   const row = db.prepare(`
     SELECT tic.*, op.slug, op.display_name, op.location, op.public_video_url, op.embed_video_url,
-           op.short_quote, op.testimony_summary, op.status AS owner_status
+           op.short_quote, op.testimony_summary, op.status AS owner_status,
+           ${optionalSelects}
     FROM testimony_item_codes tic
     LEFT JOIN owner_profiles op ON op.id = tic.owner_profile_id
     WHERE tic.item_code = ?
@@ -213,6 +231,19 @@ function resolveItemCode(db, rawItemCode) {
       embed_video_url: row.embed_video_url,
       short_quote: row.short_quote,
       testimony_summary: row.testimony_summary,
+      // Multi-format fields so story.js can render photo/audio/written correctly
+      format: row.format || 'video',
+      written_body: row.written_body || null,
+      audio_url: row.audio_url || null,
+      photo_url: row.photo_url || null,
+      photo_caption: row.photo_caption || null,
+      // Opt-in social links (NULL if blank, never rendered when empty per privacy policy)
+      social_instagram: row.social_instagram || null,
+      social_tiktok:    row.social_tiktok    || null,
+      social_youtube:   row.social_youtube   || null,
+      social_facebook:  row.social_facebook  || null,
+      social_spotify:   row.social_spotify   || null,
+      social_website:   row.social_website   || null,
       site_base_url: founder.site_base_url
     };
   }

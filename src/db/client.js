@@ -90,16 +90,47 @@ function ensureIntakeTable(database) {
 function migrateOwnerProfilesMultiformat(database) {
   try {
     const adds = [
-      { col: 'format',        ddl: "ALTER TABLE owner_profiles ADD COLUMN format TEXT NOT NULL DEFAULT 'video'" },
-      { col: 'written_body',  ddl: "ALTER TABLE owner_profiles ADD COLUMN written_body TEXT" },
-      { col: 'audio_url',     ddl: "ALTER TABLE owner_profiles ADD COLUMN audio_url TEXT" },
-      { col: 'photo_url',     ddl: "ALTER TABLE owner_profiles ADD COLUMN photo_url TEXT" },
-      { col: 'photo_caption', ddl: "ALTER TABLE owner_profiles ADD COLUMN photo_caption TEXT" },
+      { col: 'format',           ddl: "ALTER TABLE owner_profiles ADD COLUMN format TEXT NOT NULL DEFAULT 'video'" },
+      { col: 'written_body',     ddl: "ALTER TABLE owner_profiles ADD COLUMN written_body TEXT" },
+      { col: 'audio_url',        ddl: "ALTER TABLE owner_profiles ADD COLUMN audio_url TEXT" },
+      { col: 'photo_url',        ddl: "ALTER TABLE owner_profiles ADD COLUMN photo_url TEXT" },
+      { col: 'photo_caption',    ddl: "ALTER TABLE owner_profiles ADD COLUMN photo_caption TEXT" },
+      // Opt-in social media columns. All NULL by default. Never rendered when empty.
+      { col: 'social_instagram', ddl: "ALTER TABLE owner_profiles ADD COLUMN social_instagram TEXT" },
+      { col: 'social_tiktok',    ddl: "ALTER TABLE owner_profiles ADD COLUMN social_tiktok TEXT" },
+      { col: 'social_youtube',   ddl: "ALTER TABLE owner_profiles ADD COLUMN social_youtube TEXT" },
+      { col: 'social_facebook',  ddl: "ALTER TABLE owner_profiles ADD COLUMN social_facebook TEXT" },
+      { col: 'social_spotify',   ddl: "ALTER TABLE owner_profiles ADD COLUMN social_spotify TEXT" },
+      { col: 'social_website',   ddl: "ALTER TABLE owner_profiles ADD COLUMN social_website TEXT" },
     ];
     for (const { col, ddl } of adds) {
       if (!columnExists(database, 'owner_profiles', col)) {
         database.exec(ddl);
         console.log('[client] owner_profiles +column:', col);
+      }
+    }
+
+    // Mirror the six social columns onto testimony_intake so the submitter form
+    // can capture them at submit time and the approve route can copy them across.
+    // contact_email is also added defensively for legacy DBs that predate the
+    // email-notification build (safe no-op if it already exists).
+    const intakeAdds = [
+      { col: 'contact_email',    ddl: "ALTER TABLE testimony_intake ADD COLUMN contact_email TEXT" },
+      { col: 'social_instagram', ddl: "ALTER TABLE testimony_intake ADD COLUMN social_instagram TEXT" },
+      { col: 'social_tiktok',    ddl: "ALTER TABLE testimony_intake ADD COLUMN social_tiktok TEXT" },
+      { col: 'social_youtube',   ddl: "ALTER TABLE testimony_intake ADD COLUMN social_youtube TEXT" },
+      { col: 'social_facebook',  ddl: "ALTER TABLE testimony_intake ADD COLUMN social_facebook TEXT" },
+      { col: 'social_spotify',   ddl: "ALTER TABLE testimony_intake ADD COLUMN social_spotify TEXT" },
+      { col: 'social_website',   ddl: "ALTER TABLE testimony_intake ADD COLUMN social_website TEXT" },
+    ];
+    for (const { col, ddl } of intakeAdds) {
+      try {
+        if (!columnExists(database, 'testimony_intake', col)) {
+          database.exec(ddl);
+          console.log('[client] testimony_intake +column:', col);
+        }
+      } catch (innerErr) {
+        console.warn('[client] testimony_intake migration skipped for', col + ':', innerErr.message);
       }
     }
   } catch (error) {

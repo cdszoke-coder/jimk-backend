@@ -139,9 +139,28 @@ router.post('/:id(\\d+)/approve', (req, res) => {
     item_codes.map(c => String(c || '').trim().toUpperCase()).filter(Boolean)
   ));
 
+  // CLAIM REQUEST detection. If admin_notes starts with [CLAIM REQUEST] we
+  // attempt to extract the matched owner_id the public /claim endpoint logged.
+  // Admin can still override by passing reuse_owner_id in the request body.
+  let claimOwnerId = null;
+  const notes = String(sub.admin_notes || '');
+  const isClaim = /^\[CLAIM REQUEST\]/i.test(notes);
+  if (isClaim) {
+    const m = notes.match(/owner_id=(\d+)/);
+    if (m) claimOwnerId = Number(m[1]);
+    // Ensure the new shirt code (stored on intake.qr_code) is in the list of
+    // codes the admin is attaching. Admin can still add more codes.
+    if (sub.qr_code) {
+      const newCode = String(sub.qr_code).trim().toUpperCase();
+      if (newCode && !cleanCodes.includes(newCode)) cleanCodes.push(newCode);
+    }
+  }
+
   try {
     const tx = db.transaction(() => {
-      let ownerId = body.reuse_owner_id ? Number(body.reuse_owner_id) : null;
+      // Precedence: explicit body.reuse_owner_id > claim-matched owner > new owner.
+      let ownerId = body.reuse_owner_id ? Number(body.reuse_owner_id)
+                  : (claimOwnerId || null);
 
       if (!ownerId) {
         const display_name = String(body.display_name || sub.display_name || '').trim() || 'Anonymous';

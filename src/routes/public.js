@@ -134,6 +134,18 @@ router.get('/owner/:slug', (req, res) => {
 
     if (!row) return res.status(404).json({ error: 'not_found', slug });
 
+    // Surface every shirt code attached to this owner so the story page can
+    // display the identifier(s). Users who lost their code can find it here
+    // and use it later to link a new shirt to the same testimony.
+    try {
+      const codeRows = db.prepare(
+        'SELECT item_code FROM testimony_item_codes WHERE owner_profile_id = ? ORDER BY item_code ASC'
+      ).all(row.id);
+      row.linked_item_codes = codeRows.map(r => r.item_code);
+    } catch (_) {
+      row.linked_item_codes = [];
+    }
+
     // Tag mode so story.js renders the 'Shared Testimony' kicker.
     row.mode = 'owner_profile';
     return ok(res, row);

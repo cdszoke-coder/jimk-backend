@@ -340,4 +340,108 @@ router.post('/youtube-finalize', express.json({ limit: '64kb' }), async (req, re
   }
 });
 
+// ---------- CLAIM REQUEST (link new shirt to an existing testimony) ----------
+// Submitter says: "I already have a testimony — attach this new shirt code to it."
+// Verification = original QR code only (pick 1A). Result = queued CLAIM REQUEST
+// row for admin (pick 2B). Even on no-match we still queue (pick 3B) so admin
+// can decide manually. The submitter NEVER auto-attaches — admin always reviews.
+router.post('/claim', express.json({ limit: '32kb' }), (req, res) => {
+  try {
+    const db = getDb();
+    if (!db) return res.status(500).json({ error: 'database not ready' });
+
+    const b = req.body || {};
+    const new_code   = clean((b.new_qr_code || '').toUpperCase(), 60);
+    const old_code   = clean((b.old_qr_code || '').toUpperCase(), 60);
+    const display_name = clean(b.display_name, 120);
+    const contact_email = clean(b.contact_email, 200);
+
+    if (!new_code) return res.status(400).json({ error: 'New shirt code is required' });
+    if (!old_code) return res.status(400).json({ error: 'Original QR code from your first shirt is required' });
+    if (!display_name) return res.status(400).json({ error: 'Name is required' });
+
+    // Look up the original code to see whether it resolves to an active owner.
+    let matchedOwnerId = null;
+    let matchedOwnerName = null;
+    let matchedOwnerSlug = null;
+    try {
+      const row = db.prepare(`
+        SELECT tic.owner_profile_id AS owner_id,
+               op.display_name      AS owner_name,
+               op.slug              AS owner_slug,
+               op.status            AS owner_status
+          FROM testimony_item_codes tic
+          LEFT JOIN owner_profiles op ON op.id = tic.owner_profile_id
+         WHERE tic.item_code = ?
+      `).get(old_code);
+      if (row && row.owner_id && row.owner_status === 'active') {
+        matchedOwnerId   = row.owner_id;
+        matchedOwnerName = row.owner_name;
+        matchedOwnerSlug = row.owner_slug;
+      }
+    } catch (_) {}
+
+    // Tag the admin_notes so the moderation panel can render a CLAIM REQUEST
+    // badge and the Attach Codes flow can prefill the matched owner.
+    const tag = matchedOwnerId
+      ? `[CLAIM REQUEST] Match: owner_id=${matchedOwnerId} (${matchedOwnerName || ''}) | new_code=${new_code} | old_code=${old_code}`
+      : `[CLAIM REQUEST] No match for old_code=${old_code} | new_code=${new_code} — admin must verify identity manually`;
+
+    // Use status='pending' (CHECK constraint only allows pending/approved/rejected/archived).
+    // format='pending' is allowed and signals "not a new testimony — a claim request".
+    const stmt = db.prepare(`
+      INSERT INTO testimony_intake (
+        display_name, location, discovery_source, qr_code, format, short_quote,
+        video_file_url, video_link_url, written_body, audio_url, photo_url, photo_caption,
+        contact_email, consent_lord, consent_publish, status, admin_notes
+      ) VALUES (
+        @display_name, NULL, 'qr', @new_code, 'pending', NULL,
+        NULL, NULL, NULL, NULL, NULL, NULL,
+        @contact_email, 1, 1, 'pending', @admin_notes
+      )
+    `);
+    const result = stmt.run({
+      display_name, new_code, contact_email, admin_notes: tag
+    });
+
+    // Fire admin notification email (thank-you fires only after admin approves
+    // the claim, since the user did not actually submit a new testimony).
+    if (mail && typeof mail.sendAdminNewSubmission === 'function') {
+      setImmediate(() => {
+        try {
+          mail.sendAdminNewSubmission({
+            id: result.lastInsertRowid,
+            display_name,
+            location: null,
+            discovery_source: 'qr',
+            qr_code: new_code,
+            format: 'pending',
+            short_quote: null,
+            written_body: tag,
+            contact_email,
+            admin_notes: tag
+          }).catch(e => console.warn('[claim] admin mail failed:', e.message));
+        } catch (_) {}
+      });
+    }
+
+    return res.json({
+      ok: true,
+      id: result.lastInsertRowid,
+      status: 'pending',
+      matched: !!matchedOwnerId,
+      // Do NOT leak the matched slug/name on no-match — protects privacy.
+      // On a match, surfacing the owner name is safe because the requester
+      // proved they hold the original shirt code.
+      owner: matchedOwnerId ? { name: matchedOwnerName, slug: matchedOwnerSlug } : null,
+      message: matchedOwnerId
+        ? `Thank you. We found your testimony and queued this shirt to be attached. You'll get an email once approved.`
+        : `Thank you. Your request has been queued for review. We'll email you once it's resolved.`
+    });
+  } catch (e) {
+    console.error('claim error:', e);
+    return res.status(500).json({ error: 'Claim request failed', message: e.message });
+  }
+});
+
 module.exports = router;

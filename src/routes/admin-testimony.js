@@ -451,4 +451,99 @@ router.get('/owners', (req, res) => {
   }
 });
 
+// ============================================================
+// EDIT SOCIALS — admin-only update of the six opt-in social fields
+// on an existing owner_profile (wall record). Scope is intentionally tight:
+// six URL columns + nothing else. Other columns are preserved.
+// ============================================================
+
+const SOCIAL_FIELDS = [
+  'social_instagram',
+  'social_tiktok',
+  'social_youtube',
+  'social_facebook',
+  'social_spotify',
+  'social_website'
+];
+
+function normalizeSocialValue(v) {
+  if (v == null) return null;
+  const s = String(v).trim();
+  if (!s) return null;
+  if (s.length > 300) return s.slice(0, 300);
+  return s;
+}
+
+// GET current socials for a wall record. Returns null for missing columns.
+router.get('/owner/:id(\\d+)/socials', (req, res) => {
+  try {
+    const db = getDb();
+    const id = Number(req.params.id);
+
+    const cols = db.prepare('PRAGMA table_info(owner_profiles)').all().map(c => c.name);
+    const has = (c) => cols.includes(c);
+    const selectParts = ['id', 'display_name', 'slug'];
+    for (const f of SOCIAL_FIELDS) {
+      selectParts.push(has(f) ? f : `NULL AS ${f}`);
+    }
+    const row = db.prepare(`SELECT ${selectParts.join(', ')} FROM owner_profiles WHERE id = ?`).get(id);
+    if (!row) return res.status(404).json({ error: 'not_found' });
+    return res.json({ ok: true, owner: row });
+  } catch (e) {
+    console.error('socials read error:', e);
+    return res.status(500).json({ error: e.message || 'read_failed' });
+  }
+});
+
+// PATCH socials. Body may contain any subset of the six fields.
+// Empty string / missing key = clear that field (set to NULL).
+// Anything outside the whitelist is silently ignored.
+router.patch('/owner/:id(\\d+)/socials', (req, res) => {
+  try {
+    const db = getDb();
+    const id = Number(req.params.id);
+    const body = req.body || {};
+
+    // Sanity check the owner exists before doing anything.
+    const existing = db.prepare('SELECT id FROM owner_profiles WHERE id = ?').get(id);
+    if (!existing) return res.status(404).json({ error: 'not_found' });
+
+    // Detect which social columns exist so we don't write to a missing column
+    // on a legacy DB (pre-Drop-1). Caller gets a 400 if no migration ran.
+    const cols = db.prepare('PRAGMA table_info(owner_profiles)').all().map(c => c.name);
+    const writable = SOCIAL_FIELDS.filter(f => cols.includes(f));
+    if (!writable.length) {
+      return res.status(400).json({
+        error: 'no_social_columns',
+        message: 'owner_profiles is missing the social columns. Run the migration first.'
+      });
+    }
+
+    // Collect updates. Only keys explicitly present in the body are touched.
+    const updates = {};
+    for (const f of writable) {
+      if (Object.prototype.hasOwnProperty.call(body, f)) {
+        updates[f] = normalizeSocialValue(body[f]);
+      }
+    }
+    if (!Object.keys(updates).length) {
+      return res.status(400).json({ error: 'no_fields', message: 'No social fields provided to update.' });
+    }
+
+    const setSql = Object.keys(updates).map(k => `${k} = @${k}`).join(', ');
+    db.prepare(`UPDATE owner_profiles SET ${setSql}, updated_at = CURRENT_TIMESTAMP WHERE id = @id`).run({ id, ...updates });
+
+    // Return the fresh row so the admin UI can repaint without a refetch.
+    const selectParts = ['id', 'display_name', 'slug'];
+    for (const f of SOCIAL_FIELDS) {
+      selectParts.push(cols.includes(f) ? f : `NULL AS ${f}`);
+    }
+    const fresh = db.prepare(`SELECT ${selectParts.join(', ')} FROM owner_profiles WHERE id = ?`).get(id);
+    return res.json({ ok: true, owner: fresh, updated_fields: Object.keys(updates) });
+  } catch (e) {
+    console.error('socials update error:', e);
+    return res.status(500).json({ error: e.message || 'update_failed' });
+  }
+});
+
 module.exports = router;

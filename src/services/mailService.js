@@ -132,10 +132,30 @@ async function sendThankYou(intake) {
   const t = getTransporter();
   if (!t) return { skipped: true, reason: 'transporter unavailable' };
 
+  // Codes attached so far. For a new testimony this is just intake.qr_code (if any).
+  // For a CLAIM REQUEST it's the new code being claimed. We list them so the
+  // submitter has a record of the identifier(s) attached to their story.
+  const codesSoFar = [];
+  if (intake.qr_code) codesSoFar.push(String(intake.qr_code).trim().toUpperCase());
+
+  const isClaim = /^\[CLAIM REQUEST\]/i.test(String(intake.admin_notes || ''));
+  const introCopy = isClaim
+    ? `Thank you for asking us to link a new shirt to your existing testimony on the JESUS IS MY KING MOVEMENT wall. Your request is queued for review.`
+    : `Thank you for sharing your testimony with the JESUS IS MY KING MOVEMENT. We received your submission and it's queued for review.`;
+
+  const codesBlock = codesSoFar.length ? `
+    <p style="margin-top:18px;"><strong>Shirt code${codesSoFar.length > 1 ? 's' : ''} on your request:</strong></p>
+    <ul style="padding-left:20px;margin:6px 0 0;">
+      ${codesSoFar.map(c => `<li style="font-family:ui-monospace,monospace;color:#5a2a82;font-weight:700;">${esc(c)}</li>`).join('')}
+    </ul>
+    <p style="font-size:13px;color:#6a6480;margin-top:6px;">Save this code somewhere safe. You can use it any time to link a new shirt to your testimony.</p>
+  ` : '';
+
   const body = `
     <p>Hi ${esc(intake.display_name || 'friend')},</p>
-    <p>Thank you for sharing your testimony with the JESUS IS MY KING MOVEMENT. We received your submission and it's queued for review.</p>
+    <p>${introCopy}</p>
     <p>Once it's been reviewed, you'll get one more email from us — letting you know whether your story is going on the public wall, along with a shareable link and (if your testimony is linked to a shirt) a QR code you can post to socials.</p>
+    ${codesBlock}
     <p style="margin:22px 0;text-align:center;">
       <a href="${esc(SITE + '/movement.html')}" style="display:inline-block;background:#5a2a82;color:#fff;padding:10px 22px;border-radius:999px;font-weight:700;text-decoration:none;">Visit the Wall</a>
     </p>
@@ -195,6 +215,13 @@ async function sendDecision({ intake, decision, owner, qrCodes }) {
     }
 
     const shareCopy = `My testimony is on the Jesus Is My King Movement wall — check it out: ${storyUrl}`;
+    const codesListHtml = codes.length ? `
+      <p style="margin-top:18px;"><strong>All shirt codes attached to your testimony:</strong></p>
+      <ul style="padding-left:20px;margin:6px 0 0;">
+        ${codes.map(c => `<li style="font-family:ui-monospace,monospace;color:#5a2a82;font-weight:700;">${esc(c)}</li>`).join('')}
+      </ul>
+      <p style="font-size:13px;color:#6a6480;margin-top:6px;">Keep these somewhere safe — you can use any of them to link another shirt to your testimony later.</p>
+    ` : '';
     const body = `
       <p>Hi ${esc(intake.display_name || 'friend')},</p>
       <p><strong>Your testimony has been approved and is now live on the wall.</strong> All glory to God for the story He's writing through you.</p>
@@ -204,6 +231,7 @@ async function sendDecision({ intake, decision, owner, qrCodes }) {
       <p><strong>Share your shareable link:</strong></p>
       <p style="background:#faf6ff;padding:10px 14px;border-radius:8px;font-family:ui-monospace,monospace;font-size:13px;word-break:break-all;"><a href="${esc(storyUrl)}">${esc(storyUrl)}</a></p>
       <p style="font-size:13px;color:#6a6480;">Copy-and-paste for socials:<br><em>"${esc(shareCopy)}"</em></p>
+      ${codesListHtml}
       ${qrSectionHtml}
       <p style="margin-top:22px;">Thank you for joining the movement. Every story matters.</p>
     `;

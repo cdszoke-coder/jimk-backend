@@ -53,7 +53,15 @@ const DEFAULTS = {
   special_notes: 'Each meet includes prayer, fellowship, and testimonials. All paces welcome.',
   strava_url: 'https://strava.app.link/LoKWKWxTK3b',
   aoc_url: 'https://athletesofchrist.com/',
-  contact_email: 'chris@jesusismykingmovement.com'
+  contact_email: 'chris@jesusismykingmovement.com',
+  // Calendar fields (admin-editable). first_meeting_date is ISO YYYY-MM-DD.
+  // meeting_start_time is 24-hour HH:MM (used to build calendar event start).
+  // meeting_duration_min is integer string. meeting_recurrence drives the RRULE
+  // used by the .ics export and Google/Outlook add-event links.
+  first_meeting_date: '',
+  meeting_start_time: '10:00',
+  meeting_duration_min: '90',
+  meeting_recurrence: 'weekly-saturday'
 };
 
 function readAll(db) {
@@ -68,7 +76,11 @@ function readAll(db) {
     special_notes: getSetting(db, 'runclub.special_notes', DEFAULTS.special_notes),
     strava_url: getSetting(db, 'runclub.strava_url', DEFAULTS.strava_url),
     aoc_url: getSetting(db, 'runclub.aoc_url', DEFAULTS.aoc_url),
-    contact_email: getSetting(db, 'runclub.contact_email', DEFAULTS.contact_email)
+    contact_email: getSetting(db, 'runclub.contact_email', DEFAULTS.contact_email),
+    first_meeting_date: getSetting(db, 'runclub.first_meeting_date', DEFAULTS.first_meeting_date),
+    meeting_start_time: getSetting(db, 'runclub.meeting_start_time', DEFAULTS.meeting_start_time),
+    meeting_duration_min: getSetting(db, 'runclub.meeting_duration_min', DEFAULTS.meeting_duration_min),
+    meeting_recurrence: getSetting(db, 'runclub.meeting_recurrence', DEFAULTS.meeting_recurrence)
   };
 }
 
@@ -87,7 +99,9 @@ const ALLOWED_FIELDS = [
   'meeting_day', 'meeting_time',
   'location_name', 'location_address',
   'special_notes',
-  'strava_url', 'aoc_url', 'contact_email'
+  'strava_url', 'aoc_url', 'contact_email',
+  // Calendar fields
+  'first_meeting_date', 'meeting_start_time', 'meeting_duration_min', 'meeting_recurrence'
 ];
 
 router.patch('/admin/run-club', adminAuth, express.json({ limit: '32kb' }), (req, res) => {

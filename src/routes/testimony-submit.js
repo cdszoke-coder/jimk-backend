@@ -18,6 +18,19 @@ let yt = null;
 try { yt = require('../services/youtubeService'); }
 catch (err) { console.warn('[testimony-submit] youtubeService not loaded:', err.message); }
 
+let mail = null;
+try { mail = require('../services/mailService'); }
+catch (err) { console.warn('[testimony-submit] mailService not loaded:', err.message); }
+
+function fireMailFor(intakeRow) {
+  if (!mail || !intakeRow) return;
+  // Best-effort: never block the HTTP response on email send
+  setImmediate(() => {
+    try { mail.sendAdminNewSubmission(intakeRow).catch(e => console.warn('[testimony-submit] admin mail failed:', e.message)); } catch (_) {}
+    try { mail.sendThankYou(intakeRow).catch(e => console.warn('[testimony-submit] thank-you mail failed:', e.message)); } catch (_) {}
+  });
+}
+
 const router = express.Router();
 
 function ensureDir(p) { try { fs.mkdirSync(p, { recursive: true }); } catch (_) {} }
@@ -138,7 +151,16 @@ router.post('/', upload, (req, res) => {
       contact_email, consent_lord, consent_publish,
     });
 
-    return res.json({ ok: true, id: result.lastInsertRowid, status: 'pending' });
+    const intakeId = result.lastInsertRowid;
+
+    // Fire-and-forget emails (admin notification + submitter thank-you)
+    fireMailFor({
+      id: intakeId, display_name, location, discovery_source, qr_code, format,
+      short_quote, video_file_url, video_link_url, written_body, audio_url,
+      photo_url, photo_caption, contact_email
+    });
+
+    return res.json({ ok: true, id: intakeId, status: 'pending' });
   } catch (e) {
     console.error('testimony submit error:', e);
     return res.status(500).json({ error: 'Submission failed' });
@@ -182,7 +204,7 @@ router.post('/youtube-init', express.json({ limit: '64kb' }), async (req, res) =
 
     // Always upload as Private. If submitter consents to being featured, admin can
     // later flip it to Unlisted/Public from the moderation modal (Layer 2c controls).
-    const privacyStatus = 'unlisted';
+    const privacyStatus = 'private';
 
     const title = `Shared Testimony: ${display_name}${location ? ' — ' + location : ''}`;
     const description = [
@@ -265,6 +287,14 @@ router.post('/youtube-finalize', express.json({ limit: '64kb' }), async (req, re
              updated_at = datetime('now')
        WHERE id = ?
     `).run(video_link_url, newNotes, intakeId);
+
+    // Fire admin + thank-you emails now that the video is actually on YouTube
+    try {
+      const intakeRow = db.prepare('SELECT * FROM testimony_intake WHERE id = ?').get(intakeId);
+      fireMailFor(intakeRow);
+    } catch (mailErr) {
+      console.warn('[testimony-submit] mail load after finalize failed:', mailErr.message);
+    }
 
     // Best-effort: add to Testimonials playlist. Non-fatal if it fails.
     if (yt && typeof yt.addVideoToTestimonialsPlaylist === 'function') {

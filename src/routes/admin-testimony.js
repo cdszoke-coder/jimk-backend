@@ -8,6 +8,36 @@ const express = require('express');
 const { getDb } = require('../db/client');
 const router = express.Router();
 
+let mail = null;
+try { mail = require('../services/mailService'); }
+catch (err) { console.warn('[admin-testimony] mailService not loaded:', err.message); }
+
+function codesForOwner(db, ownerId) {
+  try {
+    const rows = db.prepare(
+      'SELECT item_code FROM testimony_item_codes WHERE owner_profile_id = ? ORDER BY item_code'
+    ).all(ownerId);
+    return rows.map(r => r.item_code);
+  } catch (e) { return []; }
+}
+
+function fireDecisionEmail(db, intakeRow, decision, ownerId) {
+  if (!mail || !intakeRow) return;
+  setImmediate(async () => {
+    try {
+      let owner = null;
+      let qrCodes = [];
+      if (ownerId) {
+        owner = db.prepare('SELECT id, slug, display_name FROM owner_profiles WHERE id = ?').get(ownerId);
+        qrCodes = codesForOwner(db, ownerId);
+      }
+      await mail.sendDecision({ intake: intakeRow, decision, owner, qrCodes });
+    } catch (e) {
+      console.warn('[admin-testimony] decision mail failed:', e.message);
+    }
+  });
+}
+
 function slugify(name) {
   return String(name || '')
     .toLowerCase()
@@ -87,6 +117,11 @@ router.patch('/:id(\\d+)', (req, res) => {
 
   if (status === 'rejected' || status === 'archived') {
     hideLinkedOwnerProfile(db, intake);
+  }
+
+  // Fire decision email on rejection (approval is fired by the approve route).
+  if (status === 'rejected') {
+    fireDecisionEmail(db, intake, 'rejected', intake.approved_owner_id || null);
   }
 
   res.json({ ok: true });
@@ -180,6 +215,15 @@ router.post('/:id(\\d+)/approve', (req, res) => {
     });
 
     const out = tx();
+
+    // Fire the approval email (with shareable URL + QR PNG attachments) fire-and-forget
+    try {
+      const freshIntake = db.prepare('SELECT * FROM testimony_intake WHERE id = ?').get(sub.id);
+      fireDecisionEmail(db, freshIntake, 'approved', out.ownerId);
+    } catch (mailErr) {
+      console.warn('[admin-testimony] approval mail kickoff failed:', mailErr.message);
+    }
+
     res.json({ ok: true, owner_profile_id: out.ownerId, codes_attached: out.attached });
   } catch (e) {
     console.error('approve error:', e);

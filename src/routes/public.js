@@ -175,4 +175,32 @@ router.get('/wall', (req, res) => {
   return ok(res, { testimonies: submissions });
 });
 
+// Site-wide social links (footer): Instagram, TikTok, YouTube.
+// Blank value -> link hidden site-wide. Stored in app_settings as a single
+// JSON blob keyed by 'site_socials'. Falls back to {} on any error.
+router.get('/site-socials', (req, res) => {
+  try {
+    const db = getDb();
+    let raw = null;
+    try {
+      const row = db.prepare("SELECT value FROM app_settings WHERE key = 'site_socials'").get();
+      raw = row ? row.value : null;
+    } catch (_) {
+      raw = null;
+    }
+    let parsed = {};
+    if (raw) {
+      try { parsed = JSON.parse(raw) || {}; } catch (_) { parsed = {}; }
+    }
+    const out = {
+      instagram: typeof parsed.instagram === 'string' ? parsed.instagram.trim() : '',
+      tiktok:    typeof parsed.tiktok    === 'string' ? parsed.tiktok.trim()    : '',
+      youtube:   typeof parsed.youtube   === 'string' ? parsed.youtube.trim()   : ''
+    };
+    return ok(res, { socials: out });
+  } catch (err) {
+    return ok(res, { socials: { instagram: '', tiktok: '', youtube: '' } });
+  }
+});
+
 module.exports = router;

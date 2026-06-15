@@ -546,4 +546,96 @@ router.patch('/owner/:id(\\d+)/socials', (req, res) => {
   }
 });
 
+// ---------------------------------------------------------------------------
+// Site-wide social links (footer): Instagram, TikTok, YouTube ONLY.
+// Stored as a single JSON blob in app_settings under key='site_socials'.
+// Blank value -> link hidden site-wide. Reads are public (GET /api/public/site-socials).
+// ---------------------------------------------------------------------------
+function ensureAppSettingsTable(db) {
+  try {
+    db.prepare(`CREATE TABLE IF NOT EXISTS app_settings (
+      key   TEXT PRIMARY KEY,
+      value TEXT,
+      updated_at TEXT DEFAULT CURRENT_TIMESTAMP
+    )`).run();
+  } catch (_) { /* ignore */ }
+}
+
+function normalizeSiteSocialValue(v) {
+  if (v == null) return '';
+  const s = String(v).trim();
+  if (!s) return '';
+  // Reject anything that isn't an http(s) URL or a leading-@ handle.
+  if (/^https?:\/\//i.test(s)) return s;
+  return s; // accept handles too; frontend can prefix if needed
+}
+
+router.get('/site-socials', (req, res) => {
+  try {
+    const db = getDb();
+    ensureAppSettingsTable(db);
+    let raw = null;
+    try {
+      const row = db.prepare("SELECT value FROM app_settings WHERE key = 'site_socials'").get();
+      raw = row ? row.value : null;
+    } catch (_) { raw = null; }
+    let parsed = {};
+    if (raw) { try { parsed = JSON.parse(raw) || {}; } catch (_) { parsed = {}; } }
+    return res.json({
+      ok: true,
+      socials: {
+        instagram: typeof parsed.instagram === 'string' ? parsed.instagram : '',
+        tiktok:    typeof parsed.tiktok    === 'string' ? parsed.tiktok    : '',
+        youtube:   typeof parsed.youtube   === 'string' ? parsed.youtube   : ''
+      }
+    });
+  } catch (e) {
+    return res.status(500).json({ error: e.message || 'read_failed' });
+  }
+});
+
+router.patch('/site-socials', (req, res) => {
+  try {
+    const db = getDb();
+    ensureAppSettingsTable(db);
+    const body = req.body || {};
+
+    // Load existing first so partial updates merge cleanly.
+    let current = { instagram: '', tiktok: '', youtube: '' };
+    try {
+      const row = db.prepare("SELECT value FROM app_settings WHERE key = 'site_socials'").get();
+      if (row && row.value) {
+        const parsed = JSON.parse(row.value) || {};
+        current = {
+          instagram: typeof parsed.instagram === 'string' ? parsed.instagram : '',
+          tiktok:    typeof parsed.tiktok    === 'string' ? parsed.tiktok    : '',
+          youtube:   typeof parsed.youtube   === 'string' ? parsed.youtube   : ''
+        };
+      }
+    } catch (_) { /* ignore, use defaults */ }
+
+    const ALLOWED = ['instagram', 'tiktok', 'youtube'];
+    const updates = {};
+    for (const k of ALLOWED) {
+      if (Object.prototype.hasOwnProperty.call(body, k)) {
+        updates[k] = normalizeSiteSocialValue(body[k]);
+      }
+    }
+    if (!Object.keys(updates).length) {
+      return res.status(400).json({ error: 'no_fields', message: 'No site social fields provided.' });
+    }
+
+    const next = { ...current, ...updates };
+    const json = JSON.stringify(next);
+    db.prepare(`INSERT INTO app_settings (key, value, updated_at)
+                VALUES ('site_socials', @json, CURRENT_TIMESTAMP)
+                ON CONFLICT(key) DO UPDATE SET value = @json, updated_at = CURRENT_TIMESTAMP`).run({ json });
+
+    return res.json({ ok: true, socials: next, updated_fields: Object.keys(updates) });
+  } catch (e) {
+    console.error('site-socials update error:', e);
+    return res.status(500).json({ error: e.message || 'update_failed' });
+  }
+});
+
 module.exports = router;

@@ -114,7 +114,16 @@ function postForm(urlStr, params) {
         try {
           const parsed = data ? JSON.parse(data) : {};
           if (res.statusCode >= 200 && res.statusCode < 300) resolve(parsed);
-          else reject(new Error(parsed.error_description || parsed.error || `HTTP ${res.statusCode}`));
+          else {
+            const parts = [
+              parsed.error_description,
+              parsed.error,
+              parsed.error && parsed.error.message,
+              `HTTP ${res.statusCode}`
+            ].filter(Boolean);
+            const msg = 'Google OAuth: ' + parts.join(' | ');
+            reject(new Error(msg));
+          }
         } catch (e) { reject(e); }
       });
     });

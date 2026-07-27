@@ -146,6 +146,9 @@ function runLightMigrations(database) {
     if (!columnExists(database, 'artist_profiles', 'hero_source')) {
       database.exec("ALTER TABLE artist_profiles ADD COLUMN hero_source TEXT NOT NULL DEFAULT 'artwork'");
     }
+    if (!columnExists(database, 'artist_profiles', 'video_placement')) {
+      database.exec("ALTER TABLE artist_profiles ADD COLUMN video_placement TEXT NOT NULL DEFAULT 'above'");
+    }
   } catch (error) {
     console.warn('Light migration warning:', error.message);
   }

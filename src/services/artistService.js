@@ -84,6 +84,7 @@ function serializeArtist(row, options = {}) {
     testimony_summary: row.testimony_summary || '',
     public_video_url: row.public_video_url || '',
     embed_video_url: row.embed_video_url || '',
+    video_placement: (row.video_placement === 'below' ? 'below' : 'above'),
     hero_image_url: row.hero_image_url || '',
     portrait_image_url: portraitImageUrl,
     hero_source: heroSource,
@@ -190,13 +191,17 @@ function createArtist(db, payload = {}) {
   const heroImageUrl = String(payload.hero_image_url || '').trim() || parseArtworkJson(artworkJson)[0] || '';
   const portraitImageUrl = String(payload.portrait_image_url || '').trim() || '';
   const heroSource = payload.hero_source === 'portrait' ? 'portrait' : 'artwork';
-  const result = db.prepare(`
-    INSERT INTO artist_profiles (
-      slug, display_name, location, medium, joined_label, short_quote, bio,
-      testimony_summary, public_video_url, embed_video_url, hero_image_url,
-      portrait_image_url, hero_source, artwork_json, status
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-  `).run(
+  const videoPlacement = payload.video_placement === 'below' ? 'below' : 'above';
+
+  // Detect optional column so we don't fail on legacy DBs that haven't run the migration yet.
+  const hasVideoPlacement = db.prepare('PRAGMA table_info(artist_profiles)').all().some(c => c.name === 'video_placement');
+
+  const cols = [
+    'slug','display_name','location','medium','joined_label','short_quote','bio',
+    'testimony_summary','public_video_url','embed_video_url','hero_image_url',
+    'portrait_image_url','hero_source','artwork_json','status'
+  ];
+  const vals = [
     slug,
     payload.display_name,
     payload.location || null,
@@ -212,7 +217,13 @@ function createArtist(db, payload = {}) {
     heroSource,
     artworkJson,
     payload.status || 'active'
-  );
+  ];
+  if (hasVideoPlacement) { cols.push('video_placement'); vals.push(videoPlacement); }
+
+  const placeholders = cols.map(() => '?').join(', ');
+  const result = db.prepare(
+    `INSERT INTO artist_profiles (${cols.join(', ')}) VALUES (${placeholders})`
+  ).run(...vals);
   return getArtistById(db, result.lastInsertRowid);
 }
 
@@ -240,26 +251,19 @@ function updateArtist(db, artistId, payload = {}) {
   const heroSource = payload.hero_source !== undefined
     ? (payload.hero_source === 'portrait' ? 'portrait' : 'artwork')
     : (existing.hero_source === 'portrait' ? 'portrait' : 'artwork');
-  db.prepare(`
-    UPDATE artist_profiles SET
-      slug = ?,
-      display_name = ?,
-      location = ?,
-      medium = ?,
-      joined_label = ?,
-      short_quote = ?,
-      bio = ?,
-      testimony_summary = ?,
-      public_video_url = ?,
-      embed_video_url = ?,
-      hero_image_url = ?,
-      portrait_image_url = ?,
-      hero_source = ?,
-      artwork_json = ?,
-      status = ?,
-      updated_at = CURRENT_TIMESTAMP
-    WHERE id = ?
-  `).run(
+
+  const hasVideoPlacement = db.prepare('PRAGMA table_info(artist_profiles)').all().some(c => c.name === 'video_placement');
+  const videoPlacement = payload.video_placement !== undefined
+    ? (payload.video_placement === 'below' ? 'below' : 'above')
+    : ((existing.video_placement === 'below') ? 'below' : 'above');
+
+  const setClauses = [
+    'slug = ?','display_name = ?','location = ?','medium = ?','joined_label = ?',
+    'short_quote = ?','bio = ?','testimony_summary = ?','public_video_url = ?',
+    'embed_video_url = ?','hero_image_url = ?','portrait_image_url = ?',
+    'hero_source = ?','artwork_json = ?','status = ?'
+  ];
+  const args = [
     slug,
     payload.display_name ?? existing.display_name,
     payload.location ?? existing.location,
@@ -274,9 +278,13 @@ function updateArtist(db, artistId, payload = {}) {
     portraitImageUrl || null,
     heroSource,
     stringifyArtworkJson(nextArtworkUrls),
-    payload.status ?? existing.status,
-    Number(artistId)
-  );
+    payload.status ?? existing.status
+  ];
+  if (hasVideoPlacement) { setClauses.push('video_placement = ?'); args.push(videoPlacement); }
+  setClauses.push('updated_at = CURRENT_TIMESTAMP');
+  args.push(Number(artistId));
+
+  db.prepare(`UPDATE artist_profiles SET ${setClauses.join(', ')} WHERE id = ?`).run(...args);
   return getArtistById(db, artistId);
 }
 

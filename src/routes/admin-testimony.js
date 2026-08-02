@@ -665,4 +665,87 @@ router.patch('/site-socials', (req, res) => {
   }
 });
 
+/* ============================================================
+ * REBUILD AUDIO -> VIDEO for an already-approved audio testimony.
+ * Same pipeline as first-approval, minus the email + minus the
+ * QR-code / owner-profile creation logic. Idempotent: safe to call
+ * multiple times; each run produces a fresh YouTube video and
+ * overwrites owner_profiles.public_video_url + embed_video_url.
+ *
+ * POST /api/admin/testimony-submissions/:id/rebuild-audio-video
+ * ============================================================ */
+router.post('/:id(\\d+)/rebuild-audio-video', (req, res) => {
+  if (!audioJob) {
+    return res.status(500).json({ error: 'audio job service not loaded' });
+  }
+  const db = getDb();
+  const sub = db.prepare('SELECT * FROM testimony_intake WHERE id = ?').get(req.params.id);
+  if (!sub) return res.status(404).json({ error: 'Submission not found' });
+  if (sub.format !== 'audio') {
+    return res.status(400).json({ error: 'Only audio submissions can be rebuilt with this endpoint' });
+  }
+  if (!sub.audio_url) {
+    return res.status(400).json({ error: 'This submission has no audio file on record' });
+  }
+
+  // Resolve owner id: prefer intake.approved_owner_id (set at first approval).
+  // Fall back to a body-supplied ownerProfileId if the caller wants to target
+  // a specific wall record (e.g. after a claim-attach).
+  let ownerProfileId = Number(sub.approved_owner_id || 0);
+  const bodyOwner = req.body && (req.body.owner_profile_id || req.body.ownerProfileId);
+  if (bodyOwner) ownerProfileId = Number(bodyOwner);
+
+  if (!ownerProfileId) {
+    return res.status(400).json({
+      error: 'This intake is not linked to an owner_profile yet. Approve it first, or pass owner_profile_id in the request body.'
+    });
+  }
+
+  // Sanity-check the owner still exists.
+  const owner = db.prepare('SELECT id, slug, display_name FROM owner_profiles WHERE id = ?').get(ownerProfileId);
+  if (!owner) return res.status(404).json({ error: 'Linked owner_profile not found' });
+
+  try {
+    audioJob.startAudioTestimonyJob({
+      intakeId: sub.id,
+      ownerProfileId: owner.id
+    });
+    return res.json({
+      ok: true,
+      intake_id: sub.id,
+      owner_profile_id: owner.id,
+      display_name: owner.display_name,
+      slug: owner.slug,
+      status: 'queued',
+      note: 'Rebuild queued. Check Render logs or the audio_job_log table for progress. Story page will refresh once the YouTube upload completes.'
+    });
+  } catch (e) {
+    console.error('[admin-testimony] rebuild-audio-video kickoff failed:', e);
+    return res.status(500).json({ error: e.message || 'rebuild kickoff failed' });
+  }
+});
+
+/* ============================================================
+ * READ audio_job_log for one intake (admin can see the pipeline
+ * progress + any error text without shelling into the DB).
+ * ============================================================ */
+router.get('/:id(\\d+)/audio-job-log', (req, res) => {
+  const db = getDb();
+  try {
+    // Table is created lazily by the audio job on first run; return empty
+    // list gracefully if it doesn't exist yet.
+    const exists = db.prepare(
+      "SELECT 1 AS ok FROM sqlite_master WHERE type='table' AND name='audio_job_log'"
+    ).get();
+    if (!exists) return res.json({ items: [] });
+    const rows = db.prepare(
+      'SELECT id, intake_id, owner_profile_id, status, video_id, public_video_url, error, created_at '
+      + 'FROM audio_job_log WHERE intake_id = ? ORDER BY id DESC LIMIT 50'
+    ).all(req.params.id);
+    return res.json({ items: rows });
+  } catch (e) {
+    return res.status(500).json({ error: e.message || 'log read failed' });
+  }
+});
+
 module.exports = router;

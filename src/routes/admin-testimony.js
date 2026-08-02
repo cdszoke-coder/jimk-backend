@@ -12,6 +12,13 @@ let mail = null;
 try { mail = require('../services/mailService'); }
 catch (err) { console.warn('[admin-testimony] mailService not loaded:', err.message); }
 
+// Async audio -> video -> YouTube pipeline. Kicked off after an audio testimony
+// is approved. Failures are logged into audio_job_log; they never affect the
+// HTTP response the admin sees.
+let audioJob = null;
+try { audioJob = require('../services/testimonyAudioJob'); }
+catch (err) { console.warn('[admin-testimony] testimonyAudioJob not loaded:', err.message); }
+
 function codesForOwner(db, ownerId) {
   try {
     const rows = db.prepare(
@@ -265,7 +272,27 @@ router.post('/:id(\\d+)/approve', (req, res) => {
       console.warn('[admin-testimony] approval mail kickoff failed:', mailErr.message);
     }
 
-    res.json({ ok: true, owner_profile_id: out.ownerId, codes_attached: out.attached });
+    // Audio -> video -> YouTube pipeline. Runs in the background after this
+    // response is already sent, so admin never waits on ffmpeg + upload.
+    // The job promotes owner_profiles.format to 'video' and fills
+    // public_video_url + embed_video_url when YouTube returns the watch URL.
+    if (audioJob && sub.format === 'audio' && sub.audio_url) {
+      try {
+        audioJob.startAudioTestimonyJob({
+          intakeId: sub.id,
+          ownerProfileId: out.ownerId
+        });
+      } catch (jobErr) {
+        console.warn('[admin-testimony] audio job kickoff failed:', jobErr.message);
+      }
+    }
+
+    res.json({
+      ok: true,
+      owner_profile_id: out.ownerId,
+      codes_attached: out.attached,
+      audio_job_started: !!(audioJob && sub.format === 'audio' && sub.audio_url)
+    });
   } catch (e) {
     console.error('approve error:', e);
     res.status(500).json({ error: e.message || 'Approve failed' });

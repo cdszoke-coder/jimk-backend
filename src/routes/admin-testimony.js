@@ -276,14 +276,19 @@ router.post('/:id(\\d+)/approve', (req, res) => {
     // response is already sent, so admin never waits on ffmpeg + upload.
     // The job promotes owner_profiles.format to 'video' and fills
     // public_video_url + embed_video_url when YouTube returns the watch URL.
-    if (audioJob && sub.format === 'audio' && sub.audio_url) {
+    const canAudio = sub.format === 'audio' && sub.audio_url;
+    const canVideo = sub.format === 'video' && sub.video_file_url;
+    if (audioJob && (canAudio || canVideo)) {
       try {
-        audioJob.startAudioTestimonyJob({
+        const starter = (canVideo && typeof audioJob.startVideoTestimonyJob === 'function')
+          ? audioJob.startVideoTestimonyJob
+          : audioJob.startAudioTestimonyJob;
+        starter({
           intakeId: sub.id,
           ownerProfileId: out.ownerId
         });
       } catch (jobErr) {
-        console.warn('[admin-testimony] audio job kickoff failed:', jobErr.message);
+        console.warn('[admin-testimony] media job kickoff failed:', jobErr.message);
       }
     }
 
@@ -291,7 +296,7 @@ router.post('/:id(\\d+)/approve', (req, res) => {
       ok: true,
       owner_profile_id: out.ownerId,
       codes_attached: out.attached,
-      audio_job_started: !!(audioJob && sub.format === 'audio' && sub.audio_url)
+      audio_job_started: !!(audioJob && (canAudio || canVideo))
     });
   } catch (e) {
     console.error('approve error:', e);
@@ -681,11 +686,14 @@ router.post('/:id(\\d+)/rebuild-audio-video', (req, res) => {
   const db = getDb();
   const sub = db.prepare('SELECT * FROM testimony_intake WHERE id = ?').get(req.params.id);
   if (!sub) return res.status(404).json({ error: 'Submission not found' });
-  if (sub.format !== 'audio') {
-    return res.status(400).json({ error: 'Only audio submissions can be rebuilt with this endpoint' });
+  if (sub.format !== 'audio' && sub.format !== 'video') {
+    return res.status(400).json({ error: 'Only audio or video submissions can be rebuilt with this endpoint' });
   }
-  if (!sub.audio_url) {
+  if (sub.format === 'audio' && !sub.audio_url) {
     return res.status(400).json({ error: 'This submission has no audio file on record' });
+  }
+  if (sub.format === 'video' && !sub.video_file_url) {
+    return res.status(400).json({ error: 'This submission has no uploaded video file on record (pasted video links cannot be re-rendered)' });
   }
 
   // Resolve owner id: prefer intake.approved_owner_id (set at first approval).
@@ -706,7 +714,10 @@ router.post('/:id(\\d+)/rebuild-audio-video', (req, res) => {
   if (!owner) return res.status(404).json({ error: 'Linked owner_profile not found' });
 
   try {
-    audioJob.startAudioTestimonyJob({
+    const starter = (sub.format === 'video' && typeof audioJob.startVideoTestimonyJob === 'function')
+      ? audioJob.startVideoTestimonyJob
+      : audioJob.startAudioTestimonyJob;
+    starter({
       intakeId: sub.id,
       ownerProfileId: owner.id
     });

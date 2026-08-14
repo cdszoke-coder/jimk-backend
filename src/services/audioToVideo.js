@@ -308,3 +308,94 @@ module.exports = {
   CROWN_ASSET,
   PIANO_BED
 };
+
+/**
+ * Re-render an uploaded VIDEO testimony with the same treatment as audio:
+ *   - karaoke subtitles burned in (Whisper word timestamps)
+ *   - piano bed mixed ~-19 dB under the voice
+ *   - normalized to 1280x720 (letterboxed with JIMK purple #2a1140)
+ * Source video length is preserved (no trim).
+ */
+async function videoToTestimonyVideo({ videoPath, outPath, withSubtitles = true, withMusicBed = true }) {
+  if (!ffmpegPath) throw new Error('ffmpeg-static is not installed on the server.');
+  if (!videoPath || !fs.existsSync(videoPath)) {
+    throw new Error(`Video file not found: ${videoPath}`);
+  }
+
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'jimk_vidvid_'));
+  const assPath = path.join(tmpDir, 'karaoke.ass');
+
+  let hasSubtitles = false;
+  let hasMusicBed  = false;
+
+  try {
+    /* -------- 1. Transcription + karaoke ASS (Whisper accepts mp4 directly) -------- */
+    if (withSubtitles) {
+      if (!whisper.isAvailable()) {
+        console.warn('[audioToVideo] WHISPER_API_KEY unset — rendering video without subtitles.');
+      } else {
+        try {
+          const { words } = await whisper.transcribeWithWordTimestamps(videoPath);
+          if (words && words.length) {
+            fs.writeFileSync(assPath, whisper.buildKaraokeAss(words), 'utf8');
+            hasSubtitles = true;
+          } else {
+            console.warn('[audioToVideo] Whisper returned no word timestamps; skipping subtitles.');
+          }
+        } catch (err) {
+          console.warn('[audioToVideo] transcription failed (continuing without subtitles):', err.message);
+        }
+      }
+    }
+
+    /* -------- 2. Piano bed -------- */
+    if (withMusicBed && fs.existsSync(PIANO_BED)) {
+      hasMusicBed = true;
+    } else if (withMusicBed) {
+      console.warn('[audioToVideo] piano bed missing at ' + PIANO_BED + ' — rendering without music.');
+    }
+
+    /* -------- 3. ffmpeg pipeline --------
+     * Inputs: 0 = uploaded video (voice on its audio track), 1 = piano bed loop.
+     * Video: scale to fit 1280x720, pad with brand purple, 30fps, optional subtitle burn.
+     * Audio: voice aresample + music at 0.08, amix duration=first, loudnorm.
+     */
+    let videoChain = `[0:v]scale=1280:720:force_original_aspect_ratio=decrease,pad=1280:720:(ow-iw)/2:(oh-ih)/2:color=0x2a1140,fps=30,format=yuv420p`;
+    if (hasSubtitles) videoChain += `,subtitles='${escFilterPath(assPath)}'`;
+    videoChain += '[v]';
+
+    const audioChain = hasMusicBed
+      ? `[0:a]aresample=44100[voice];` +
+        `[1:a]aresample=44100,volume=0.08,afade=t=in:st=0:d=1.2[music];` +
+        `[voice][music]amix=inputs=2:duration=first:dropout_transition=0:normalize=0,loudnorm=I=-16:TP=-1.5:LRA=11[aout]`
+      : `[0:a]aresample=44100,loudnorm=I=-16:TP=-1.5:LRA=11[aout]`;
+
+    const args = ['-y', '-i', videoPath];
+    if (hasMusicBed) args.push('-stream_loop', '-1', '-i', PIANO_BED);
+    args.push(
+      '-filter_complex', videoChain + ';' + audioChain,
+      '-map', '[v]',
+      '-map', '[aout]',
+      '-c:v', 'libx264',
+      '-preset', 'medium',
+      '-crf', '21',
+      '-c:a', 'aac',
+      '-b:a', '192k',
+      '-ac', '2',
+      '-ar', '44100',
+      '-pix_fmt', 'yuv420p',
+      '-shortest',
+      '-movflags', '+faststart',
+      outPath
+    );
+
+    await runFfmpeg(args);
+
+    const durationSec = await probeDuration(outPath).catch(() => null);
+    return { outPath, durationSec, hasSubtitles, hasMusicBed };
+  } finally {
+    try { fs.rmSync(tmpDir, { recursive: true, force: true }); } catch (_) {}
+  }
+}
+
+module.exports.videoToTestimonyVideo = videoToTestimonyVideo;

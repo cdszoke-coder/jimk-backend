@@ -20,7 +20,7 @@
 const path = require('path');
 const fs = require('fs');
 
-const { audioToTestimonyVideo, tempOutputPathForIntake } = require('./audioToVideo');
+const { audioToTestimonyVideo, videoToTestimonyVideo, tempOutputPathForIntake } = require('./audioToVideo');
 
 let yt = null;
 try { yt = require('./youtubeService'); }
@@ -61,7 +61,7 @@ function log(db, row) {
   }
 }
 
-function resolveAudioAbsolutePath(audioUrl) {
+function resolveMediaAbsolutePath(audioUrl) {
   if (!audioUrl) return null;
   const uploadsDir = process.env.UPLOADS_DIR || '/opt/render/project/src/data/uploads';
   try {
@@ -129,6 +129,10 @@ function startAudioTestimonyJob({ intakeId, ownerProfileId }) {
   setImmediate(() => schedule(() => runJob({ intakeId, ownerProfileId })));
 }
 
+function startVideoTestimonyJob({ intakeId, ownerProfileId }) {
+  setImmediate(() => schedule(() => runVideoJob({ intakeId, ownerProfileId })));
+}
+
 async function runJob({ intakeId, ownerProfileId }) {
   const db = getDb();
   ensureAuditTable(db);
@@ -142,7 +146,7 @@ async function runJob({ intakeId, ownerProfileId }) {
   const audioUrl = intake.audio_url || owner.audio_url;
   if (!audioUrl) return log(db, { intake_id: intakeId, owner_profile_id: ownerProfileId, status: 'error', error: 'no audio_url on intake or owner' });
 
-  const audioAbs = resolveAudioAbsolutePath(audioUrl);
+  const audioAbs = resolveMediaAbsolutePath(audioUrl);
   if (!audioAbs) return log(db, { intake_id: intakeId, owner_profile_id: ownerProfileId, status: 'error', error: `audio file not found on disk for ${audioUrl}` });
 
   const displayName = (owner.display_name || intake.display_name || 'Anonymous').trim();
@@ -225,9 +229,106 @@ async function runJob({ intakeId, ownerProfileId }) {
   }
 }
 
+async function runVideoJob({ intakeId, ownerProfileId }) {
+  const db = getDb();
+  ensureAuditTable(db);
+
+  const intake = db.prepare('SELECT * FROM testimony_intake WHERE id = ?').get(intakeId);
+  const owner  = db.prepare('SELECT * FROM owner_profiles WHERE id = ?').get(ownerProfileId);
+
+  if (!intake) return log(db, { intake_id: intakeId, owner_profile_id: ownerProfileId, status: 'error', error: 'intake row missing' });
+  if (!owner)  return log(db, { intake_id: intakeId, owner_profile_id: ownerProfileId, status: 'error', error: 'owner row missing' });
+
+  const videoUrl = intake.video_file_url || owner.video_file_url;
+  if (!videoUrl) return log(db, { intake_id: intakeId, owner_profile_id: ownerProfileId, status: 'error', error: 'no video_file_url on intake or owner' });
+
+  const videoAbs = resolveMediaAbsolutePath(videoUrl);
+  if (!videoAbs) return log(db, { intake_id: intakeId, owner_profile_id: ownerProfileId, status: 'error', error: `video file not found on disk for ${videoUrl}` });
+
+  const displayName = (owner.display_name || intake.display_name || 'Anonymous').trim();
+  const location    = (owner.location || intake.location || '').trim();
+  const shortQuote  = (owner.short_quote || intake.short_quote || '').trim();
+  const writtenBody = (intake.written_body || '').trim();
+  const slug        = owner.slug || '';
+
+  if (!yt || !yt.isConnected || !yt.isConnected()) {
+    return log(db, { intake_id: intakeId, owner_profile_id: ownerProfileId, status: 'error', error: 'YouTube is not connected' });
+  }
+
+  const outPath = tempOutputPathForIntake(`v${intakeId}`);
+
+  try {
+    log(db, { intake_id: intakeId, owner_profile_id: ownerProfileId, status: 'rendering' });
+
+    const { durationSec, hasSubtitles, hasMusicBed } = await videoToTestimonyVideo({
+      videoPath: videoAbs,
+      outPath
+    });
+
+    log(db, {
+      intake_id: intakeId,
+      owner_profile_id: ownerProfileId,
+      status: 'uploading',
+      error: `rendered with subtitles=${hasSubtitles ? 'yes' : 'no'} music=${hasMusicBed ? 'yes' : 'no'}`
+    });
+
+    const title = `${displayName} — Shared Testimony`.slice(0, 100);
+    const description = buildDescription({ displayName, location, shortQuote, writtenBody, slug });
+
+    const ytRes = await yt.uploadVideoFromPath(outPath, {
+      title,
+      description,
+      privacyStatus: 'unlisted',
+      tags: ['testimony', 'video', 'jesusismykingmovement']
+    });
+
+    const videoId = ytRes.id;
+    const watchUrl = `https://www.youtube.com/watch?v=${videoId}`;
+    const embedUrl = `https://www.youtube.com/embed/${videoId}`;
+
+    try {
+      if (typeof yt.addVideoToTestimonialsPlaylist === 'function') {
+        await yt.addVideoToTestimonialsPlaylist(videoId);
+      }
+    } catch (e) {
+      console.warn('[testimonyAudioJob] playlist add failed (non-fatal):', e.message);
+    }
+
+    db.prepare(`UPDATE owner_profiles
+      SET format = 'video',
+          public_video_url = ?,
+          embed_video_url = ?,
+          updated_at = CURRENT_TIMESTAMP
+      WHERE id = ?`).run(watchUrl, embedUrl, ownerProfileId);
+
+    log(db, {
+      intake_id: intakeId,
+      owner_profile_id: ownerProfileId,
+      status: 'done',
+      video_id: videoId,
+      public_video_url: watchUrl
+    });
+
+    console.log(`[testimonyAudioJob] video intake ${intakeId} -> ${watchUrl} (${durationSec ? Math.round(durationSec) + 's' : 'unknown duration'})`);
+  } catch (err) {
+    console.error('[testimonyAudioJob] video job failed:', err);
+    log(db, {
+      intake_id: intakeId,
+      owner_profile_id: ownerProfileId,
+      status: 'error',
+      error: err.message || String(err)
+    });
+  } finally {
+    try { fs.unlinkSync(outPath); } catch (_) {}
+  }
+}
+
 module.exports = {
   startAudioTestimonyJob,
+  startVideoTestimonyJob,
   runJob,
+  runVideoJob,
   buildDescription,
-  resolveAudioAbsolutePath
+  resolveMediaAbsolutePath,
+  resolveAudioAbsolutePath: resolveMediaAbsolutePath
 };

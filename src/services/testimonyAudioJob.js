@@ -1,35 +1,24 @@
 'use strict';
 
 /**
- * src/services/testimonyAudioJob.js
+ * src/services/testimonyAudioJob.js  (v2 — karaoke + music bed)
  *
- * Async post-approval worker for AUDIO testimonies.
+ * Async post-approval worker for AUDIO testimonies. Unchanged contract from v1;
+ * the render now includes word-synced karaoke subtitles and a royalty-free
+ * piano bed when those subsystems are available.
  *
- * When an admin approves a testimony whose format === 'audio', the approve
- * route calls startAudioTestimonyJob() with the intake id + newly-created
- * owner_profile id. This module then, in the background:
- *
- *   1. Loads the intake + owner rows.
- *   2. Resolves the audio file on the Render disk from the stored /uploads URL.
- *   3. Runs ffmpeg to render an MP4 with the JIMK still-frame + pulse animation.
- *   4. Uploads the MP4 to the connected JIMK YouTube channel as UNLISTED.
- *   5. Adds the resulting video to the "Testimonials" playlist.
- *   6. Updates owner_profiles: format='video', public_video_url,
- *      embed_video_url. audio_url is preserved for the story page fallback.
- *   7. Logs a row in an audio_job_log audit table (auto-created on first run).
- *
- * Failures are logged but never thrown to the HTTP layer — the admin approval
- * has already returned 200 by the time this job runs.
- *
- * Design notes:
- *   - setImmediate() kick-off so the HTTP response is sent first.
- *   - Serialized queue (one active job at a time) so simultaneous approvals
- *     do not blow up ffmpeg memory on Render's shared box.
+ * Pipeline:
+ *   1. Load intake + owner rows.
+ *   2. Resolve audio file on the Render disk.
+ *   3. ffmpeg render (JIMK frame + pulse + karaoke + piano mix).
+ *   4. Upload MP4 to JIMK YouTube as UNLISTED.
+ *   5. Add to "Testimonials" playlist.
+ *   6. Patch owner_profiles (format='video', public_video_url, embed_video_url).
+ *   7. Audit row in audio_job_log (now also records subtitles/music flags).
  */
 
 const path = require('path');
 const fs = require('fs');
-const os = require('os');
 
 const { audioToTestimonyVideo, tempOutputPathForIntake } = require('./audioToVideo');
 
@@ -39,7 +28,6 @@ catch (err) { console.warn('[testimonyAudioJob] youtubeService not loaded:', err
 
 const { getDb } = require('../db/client');
 
-/* --------------------- audit table --------------------- */
 function ensureAuditTable(db) {
   try {
     db.prepare(`CREATE TABLE IF NOT EXISTS audio_job_log (
@@ -73,24 +61,15 @@ function log(db, row) {
   }
 }
 
-/* --------------------- audio URL -> local path --------------------- */
-/**
- * The submitter uploaded to /uploads/testimony-audio/<file>. testimony-submit.js
- * writes the public URL like `${backend}/uploads/testimony-audio/<file>` to
- * intake.audio_url. This function resolves that URL back to an on-disk path
- * inside the Render persistent volume.
- */
 function resolveAudioAbsolutePath(audioUrl) {
   if (!audioUrl) return null;
-  const uploadsDir = process.env.UPLOADS_DIR
-    || '/opt/render/project/src/data/uploads';
+  const uploadsDir = process.env.UPLOADS_DIR || '/opt/render/project/src/data/uploads';
   try {
     const u = new URL(audioUrl);
     const relFromUploads = u.pathname.replace(/^\/+/, '').replace(/^uploads\//, '');
     const abs = path.join(uploadsDir, relFromUploads);
     if (fs.existsSync(abs)) return abs;
   } catch (_) { /* fall through */ }
-  // Not a URL — treat as relative or absolute path directly.
   if (path.isAbsolute(audioUrl) && fs.existsSync(audioUrl)) return audioUrl;
   const rel = String(audioUrl).replace(/^\/+/, '').replace(/^uploads\//, '');
   const abs2 = path.join(uploadsDir, rel);
@@ -98,11 +77,6 @@ function resolveAudioAbsolutePath(audioUrl) {
   return null;
 }
 
-/* --------------------- description builder --------------------- */
-/**
- * YouTube description built from submitter-provided fields — never a
- * hardcoded string. All fields are optional except display_name.
- */
 function buildDescription({ displayName, location, shortQuote, writtenBody, slug }) {
   const parts = [];
   parts.push(`${displayName} — Shared Testimony`);
@@ -133,7 +107,6 @@ function buildDescription({ displayName, location, shortQuote, writtenBody, slug
   return parts.join('\n').slice(0, 4500);
 }
 
-/* --------------------- serialized queue --------------------- */
 const queue = [];
 let running = false;
 
@@ -152,11 +125,6 @@ async function drain() {
   running = false;
 }
 
-/* --------------------- public entrypoint --------------------- */
-/**
- * Kick off the audio -> video -> YouTube pipeline for one approved intake.
- * Returns immediately; work happens in the background.
- */
 function startAudioTestimonyJob({ intakeId, ownerProfileId }) {
   setImmediate(() => schedule(() => runJob({ intakeId, ownerProfileId })));
 }
@@ -192,14 +160,19 @@ async function runJob({ intakeId, ownerProfileId }) {
   try {
     log(db, { intake_id: intakeId, owner_profile_id: ownerProfileId, status: 'rendering' });
 
-    const { durationSec } = await audioToTestimonyVideo({
+    const { durationSec, hasSubtitles, hasMusicBed } = await audioToTestimonyVideo({
       audioPath: audioAbs,
       displayName,
       location,
       outPath
     });
 
-    log(db, { intake_id: intakeId, owner_profile_id: ownerProfileId, status: 'uploading' });
+    log(db, {
+      intake_id: intakeId,
+      owner_profile_id: ownerProfileId,
+      status: 'uploading',
+      error: `rendered with subtitles=${hasSubtitles ? 'yes' : 'no'} music=${hasMusicBed ? 'yes' : 'no'}`
+    });
 
     const title = `${displayName} — Shared Testimony`.slice(0, 100);
     const description = buildDescription({ displayName, location, shortQuote, writtenBody, slug });
@@ -215,7 +188,6 @@ async function runJob({ intakeId, ownerProfileId }) {
     const watchUrl = `https://www.youtube.com/watch?v=${videoId}`;
     const embedUrl = `https://www.youtube.com/embed/${videoId}`;
 
-    // Best-effort playlist add — non-fatal.
     try {
       if (typeof yt.addVideoToTestimonialsPlaylist === 'function') {
         await yt.addVideoToTestimonialsPlaylist(videoId);
@@ -224,7 +196,6 @@ async function runJob({ intakeId, ownerProfileId }) {
       console.warn('[testimonyAudioJob] playlist add failed (non-fatal):', e.message);
     }
 
-    // Patch owner row: promote to video, keep audio_url for fallback rendering.
     db.prepare(`UPDATE owner_profiles
       SET format = 'video',
           public_video_url = ?,
@@ -256,7 +227,7 @@ async function runJob({ intakeId, ownerProfileId }) {
 
 module.exports = {
   startAudioTestimonyJob,
-  runJob,           // exported for admin retry endpoints
-  buildDescription, // exported for tests
+  runJob,
+  buildDescription,
   resolveAudioAbsolutePath
 };

@@ -1,7 +1,7 @@
 'use strict';
 
 /**
- * src/services/audioToVideo.js
+ * src/services/audioToVideo.js  (v2 — karaoke + music bed)
  *
  * Renders an MP4 from an audio testimony:
  *   - 1280x720
@@ -10,20 +10,22 @@
  *   - "SHARED TESTIMONY" caption in gold (#b8860b)
  *   - Submitter's display name in white
  *   - Optional location subtitle
- *   - Audio track = the uploaded audio file (converted to AAC 128k stereo)
+ *   - KARAOKE SUBTITLES: word-by-word highlight synced to the voice
+ *     (ASS file built from Whisper word timestamps; burned in by ffmpeg)
+ *   - MUSIC BED: bundled royalty-free piano loop (assets/jimk-piano-bed.mp3)
+ *     mixed ~-18 dB under the voice, looped to match audio duration
  *
  * The final video length matches the input audio (no hard trim).
  *
  * Dependencies:
- *   - ffmpeg-static (bundled Node binary; ~40 MB build overhead)
- *   - sharp (already in the backend for artist images) — used to prep the still frame
+ *   - ffmpeg-static (bundled Node binary)
+ *   - sharp (still-frame generation)
+ *   - whisperTranscribe.js (optional; if WHISPER_API_KEY unset, video renders
+ *     WITHOUT subtitles — never fails the whole job on missing captions)
  *
- * Bundled asset:
- *   - src/assets/jimk-crown.png  (crown-of-thorns logo, black on transparent)
- *
- * The still frame is generated on the fly with sharp so ffmpeg only handles
- * the encoding pass. This keeps the ffmpeg command simple and lets us hit
- * the pulse animation with a single zoompan filter.
+ * Bundled assets:
+ *   - src/assets/jimk-crown.png
+ *   - src/assets/jimk-piano-bed.mp3
  */
 
 const { spawn } = require('child_process');
@@ -34,57 +36,61 @@ const crypto = require('crypto');
 const sharp = require('sharp');
 
 let ffmpegPath = null;
-try {
-  ffmpegPath = require('ffmpeg-static');
-} catch (err) {
-  console.warn('[audioToVideo] ffmpeg-static not installed. Run `npm install ffmpeg-static`.');
-}
+try { ffmpegPath = require('ffmpeg-static'); }
+catch (err) { console.warn('[audioToVideo] ffmpeg-static not installed. Run `npm install ffmpeg-static`.'); }
+
+const whisper = require('./whisperTranscribe');
 
 const CROWN_ASSET = path.join(__dirname, '..', 'assets', 'jimk-crown.png');
+const PIANO_BED   = path.join(__dirname, '..', 'assets', 'jimk-piano-bed.mp3');
 
 const WIDTH  = 1280;
 const HEIGHT = 720;
-const CROWN_SIZE = 260;                 // px, centered vertically slightly above middle
-const CROWN_CENTER_Y = 260;             // y of crown center
-const CAPTION_Y = 435;                  // "SHARED TESTIMONY"
-const NAME_Y = 495;                     // display name
-const LOCATION_Y = 555;                 // location subtitle
+const CROWN_SIZE = 240;
+const CROWN_CENTER_Y = 215;   // shifted up to leave room for subtitles lower third
+const CAPTION_Y = 380;
+const NAME_Y = 440;
+const LOCATION_Y = 495;
 const BG_STOP1 = '#2a1140';
 const BG_STOP2 = '#5a2a82';
 const GOLD = '#b8860b';
 
-/**
- * Escape a string for use inside ffmpeg drawtext text='...'
- * ffmpeg quoting rules: escape backslash, single quote, colon, and %{}
- */
-function escDrawtext(value) {
-  return String(value == null ? '' : value)
-    .replace(/\\/g, '\\\\')
-    .replace(/'/g, "\\\\'")
-    .replace(/:/g, '\\\\:')
-    .replace(/%/g, '\\\\%');
+function xmlEsc(v) {
+  return String(v)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&apos;');
 }
 
 /**
- * Build the still frame (background + logo + caption + name + location) as a
- * single PNG using sharp. Everything except the pulse animation is baked in
- * here. The pulse is applied later by ffmpeg's zoompan filter on the whole
- * frame — because the JIMK layout is centered, zooming the whole frame reads
- * as "the crown is breathing" which is the visual we want.
+ * Escape an absolute path for the ffmpeg subtitles filter.
+ * ffmpeg filter args need backslash-escaped colons and single quotes, and the
+ * whole expression is single-quoted in the filtergraph.
+ */
+function escFilterPath(p) {
+  return String(p)
+    .replace(/\\/g, '\\\\')
+    .replace(/:/g, '\\:')
+    .replace(/'/g, "\\'");
+}
+
+/**
+ * Build the still frame (background + logo + caption + name + location).
  */
 async function renderStillFrame({ displayName, location }, outPath) {
-  const nameSafe     = String(displayName || 'Anonymous').trim();
-  const locSafe      = String(location || '').trim();
-  const captionText  = 'SHARED TESTIMONY';
+  const nameSafe    = String(displayName || 'Anonymous').trim();
+  const locSafe     = String(location || '').trim();
+  const captionText = 'SHARED TESTIMONY';
 
-  // Background gradient built as an SVG (sharp accepts SVG input natively).
   const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${WIDTH}" height="${HEIGHT}">
     <defs>
       <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
         <stop offset="0%"   stop-color="${BG_STOP1}"/>
         <stop offset="100%" stop-color="${BG_STOP2}"/>
       </linearGradient>
-      <radialGradient id="glow" cx="50%" cy="35%" r="40%">
+      <radialGradient id="glow" cx="50%" cy="32%" r="42%">
         <stop offset="0%"   stop-color="${GOLD}" stop-opacity="0.18"/>
         <stop offset="100%" stop-color="${GOLD}" stop-opacity="0"/>
       </radialGradient>
@@ -112,22 +118,15 @@ async function renderStillFrame({ displayName, location }, outPath) {
 
   const bg = await sharp(Buffer.from(svg)).png().toBuffer();
 
-  // Overlay the crown centered horizontally, y = CROWN_CENTER_Y (as CENTER).
-  // The bundled logo is black. On a dark purple background we invert it to
-  // white for legibility — sharp's negate() flips black -> white while
-  // preserving the transparent background.
-  let crown;
+  let crown = null;
   try {
-    if (!fs.existsSync(CROWN_ASSET)) {
-      throw new Error(`Crown asset missing at ${CROWN_ASSET}`);
-    }
+    if (!fs.existsSync(CROWN_ASSET)) throw new Error(`Crown asset missing at ${CROWN_ASSET}`);
     crown = await sharp(CROWN_ASSET)
       .resize(CROWN_SIZE, CROWN_SIZE, { fit: 'inside' })
-      .negate({ alpha: false })         // black -> white
+      .negate({ alpha: false })
       .toBuffer();
   } catch (err) {
     console.warn('[audioToVideo] crown asset unavailable, rendering without it:', err.message);
-    crown = null;
   }
 
   const composites = [];
@@ -143,27 +142,20 @@ async function renderStillFrame({ displayName, location }, outPath) {
   return outPath;
 }
 
-function xmlEsc(v) {
-  return String(v)
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&apos;');
-}
-
 /**
- * Convert an audio file to an MP4 with the JIMK still frame + subtle pulse.
+ * Convert an audio testimony to an MP4 with karaoke subtitles + piano bed.
  *
  * Params:
- *   audioPath   absolute path to the source audio file (mp3, m4a, wav, webm, ogg, etc.)
- *   displayName submitter's name shown on the frame
- *   location    optional location line
- *   outPath     absolute path where the MP4 should be written
+ *   audioPath     absolute path to the source audio file
+ *   displayName   submitter's name shown on the frame
+ *   location      optional location line
+ *   outPath       absolute path where the MP4 should be written
+ *   withSubtitles   boolean (default true) — attempt Whisper + karaoke burn-in
+ *   withMusicBed    boolean (default true) — mix piano bed under the voice
  *
- * Returns: { outPath, durationSec }
+ * Returns: { outPath, durationSec, hasSubtitles, hasMusicBed }
  */
-async function audioToTestimonyVideo({ audioPath, displayName, location, outPath }) {
+async function audioToTestimonyVideo({ audioPath, displayName, location, outPath, withSubtitles = true, withMusicBed = true }) {
   if (!ffmpegPath) throw new Error('ffmpeg-static is not installed on the server.');
   if (!audioPath || !fs.existsSync(audioPath)) {
     throw new Error(`Audio file not found: ${audioPath}`);
@@ -171,73 +163,101 @@ async function audioToTestimonyVideo({ audioPath, displayName, location, outPath
 
   const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'jimk_audiovid_'));
   const framePath = path.join(tmpDir, 'frame.png');
+  const assPath   = path.join(tmpDir, 'karaoke.ass');
+
+  let hasSubtitles = false;
+  let hasMusicBed  = false;
 
   try {
     await renderStillFrame({ displayName, location }, framePath);
 
-    // Pulse filter:
-    //   scale = 1.0 + 0.025 * sin(2*PI * t / 3)   (approx 100% -> 105% -> 100% every 3s)
-    // We implement this by zooming the whole frame around center with zoompan
-    // being awkward on a single still, so instead we scale up the source frame
-    // via the "scale" + "crop" trick using expressions.
-    //
-    // Actually the cleanest way: use ffmpeg's "zoompan" filter on a looped
-    // still input. zoompan takes zoom expression 'z' and produces s frames
-    // per second with the still zoomed by z(n).
-    //
-    // pulse zoom range: 1.00 -> 1.05
-    // period: 3 seconds
-    // fps: 30
-    // zoom expression: '1+0.025*sin(2*PI*on/(3*30))'
-    //     (on = current output frame number)
+    /* -------- 1. Transcription + karaoke ASS -------- */
+    if (withSubtitles) {
+      if (!whisper.isAvailable()) {
+        console.warn('[audioToVideo] WHISPER_API_KEY unset — rendering without subtitles.');
+      } else {
+        try {
+          const { words } = await whisper.transcribeWithWordTimestamps(audioPath);
+          if (words && words.length) {
+            fs.writeFileSync(assPath, whisper.buildKaraokeAss(words), 'utf8');
+            hasSubtitles = true;
+          } else {
+            console.warn('[audioToVideo] Whisper returned no word timestamps; skipping subtitles.');
+          }
+        } catch (err) {
+          // Never fail the render on transcription problems.
+          console.warn('[audioToVideo] transcription failed (continuing without subtitles):', err.message);
+        }
+      }
+    }
 
-    // ffmpeg pipeline:
-    //   -loop 1 -framerate 30 -i frame.png
-    //   -i audio.ext
-    //   -shortest
-    //   -filter_complex "[0:v]zoompan=z='1+0.025*sin(2*PI*on/90)':d=1:s=1280x720,fps=30,format=yuv420p[v]"
-    //   -map "[v]" -map 1:a
-    //   -c:v libx264 -tune stillimage -preset medium -crf 20
-    //   -c:a aac -b:a 128k -ac 2 -ar 44100
-    //   -pix_fmt yuv420p
-    //   -movflags +faststart
-    //   out.mp4
+    /* -------- 2. Piano bed -------- */
+    if (withMusicBed && fs.existsSync(PIANO_BED)) {
+      hasMusicBed = true;
+    } else if (withMusicBed) {
+      console.warn('[audioToVideo] piano bed missing at ' + PIANO_BED + ' — rendering without music.');
+    }
 
-    const filter = [
-      '[0:v]',
-      "zoompan=z='1+0.025*sin(2*PI*on/90)':d=1:s=1280x720:fps=30",
-      ',fps=30,format=yuv420p[v]'
-    ].join('');
+    /* -------- 3. ffmpeg pipeline -------- */
+    //
+    // Inputs:
+    //   0: looped still frame (video)
+    //   1: testimony audio (voice)
+    //   2: piano bed (looped via -stream_loop -1, trimmed by -shortest)
+    //
+    // Video chain:
+    //   [0:v] zoompan pulse -> fps 30 -> yuv420p -> [optional subtitles burn] -> [v]
+    //
+    // Audio chain (with music):
+    //   [1:a] aresample 44100 -> [voice]
+    //   [2:a] volume=0.10,afade in/out -> [music]
+    //   [voice][music] amix normalize=0 -> loudnorm -> aac
+    //
+    // Audio chain (no music):
+    //   [1:a] aresample -> loudnorm -> aac
+
+    const videoChain = hasSubtitles
+      ? `[0:v]zoompan=z='1+0.025*sin(2*PI*on/90)':d=1:s=1280x720:fps=30,fps=30,format=yuv420p,subtitles='${escFilterPath(assPath)}'[v]`
+      : `[0:v]zoompan=z='1+0.025*sin(2*PI*on/90)':d=1:s=1280x720:fps=30,fps=30,format=yuv420p[v]`;
+
+    const audioChain = hasMusicBed
+      ? `[1:a]aresample=44100[voice];` +
+        `[2:a]aresample=44100,volume=0.10,afade=t=in:st=0:d=1.2[music];` +
+        `[voice][music]amix=inputs=2:duration=first:dropout_transition=0:normalize=0,loudnorm=I=-16:TP=-1.5:LRA=11[aout]`
+      : `[1:a]aresample=44100,loudnorm=I=-16:TP=-1.5:LRA=11[aout]`;
+
+    const filterComplex = videoChain + ';' + audioChain;
 
     const args = [
       '-y',
-      '-loop', '1',
-      '-framerate', '30',
-      '-i', framePath,
+      '-loop', '1', '-framerate', '30', '-i', framePath,
       '-i', audioPath,
-      '-filter_complex', filter,
+    ];
+    if (hasMusicBed) {
+      args.push('-stream_loop', '-1', '-i', PIANO_BED);
+    }
+    args.push(
+      '-filter_complex', filterComplex,
       '-map', '[v]',
-      '-map', '1:a:0',
+      '-map', '[aout]',
       '-c:v', 'libx264',
       '-tune', 'stillimage',
       '-preset', 'medium',
       '-crf', '20',
       '-c:a', 'aac',
-      '-b:a', '128k',
+      '-b:a', '192k',
       '-ac', '2',
       '-ar', '44100',
       '-pix_fmt', 'yuv420p',
       '-shortest',
       '-movflags', '+faststart',
       outPath
-    ];
+    );
 
     await runFfmpeg(args);
 
-    // Best-effort probe of the resulting duration.
     const durationSec = await probeDuration(outPath).catch(() => null);
-
-    return { outPath, durationSec };
+    return { outPath, durationSec, hasSubtitles, hasMusicBed };
   } finally {
     try { fs.rmSync(tmpDir, { recursive: true, force: true }); } catch (_) {}
   }
@@ -248,7 +268,6 @@ function runFfmpeg(args) {
     const proc = spawn(ffmpegPath, args, { stdio: ['ignore', 'pipe', 'pipe'] });
     let stderr = '';
     proc.stderr.on('data', (chunk) => {
-      // ffmpeg writes progress info to stderr; keep the tail for error reporting.
       stderr += chunk.toString();
       if (stderr.length > 8192) stderr = stderr.slice(-8192);
     });
@@ -262,7 +281,6 @@ function runFfmpeg(args) {
 }
 
 function probeDuration(mp4Path) {
-  // Use ffmpeg itself to probe: `ffmpeg -i file` writes the "Duration:" line to stderr.
   return new Promise((resolve, reject) => {
     const proc = spawn(ffmpegPath, ['-i', mp4Path, '-hide_banner'], { stdio: ['ignore', 'pipe', 'pipe'] });
     let stderr = '';
@@ -277,11 +295,8 @@ function probeDuration(mp4Path) {
   });
 }
 
-/**
- * Convenience: build an output path in the OS temp dir for a given intake id.
- */
 function tempOutputPathForIntake(intakeId) {
-  const id  = String(intakeId || 'anon');
+  const id = String(intakeId || 'anon');
   const rand = crypto.randomBytes(4).toString('hex');
   return path.join(os.tmpdir(), `jimk_testimony_${id}_${rand}.mp4`);
 }
@@ -290,5 +305,6 @@ module.exports = {
   audioToTestimonyVideo,
   tempOutputPathForIntake,
   renderStillFrame,   // exported for tests
-  CROWN_ASSET
+  CROWN_ASSET,
+  PIANO_BED
 };

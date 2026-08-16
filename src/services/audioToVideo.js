@@ -54,6 +54,10 @@ const LOCATION_Y = 495;
 const BG_STOP1 = '#2a1140';
 const BG_STOP2 = '#5a2a82';
 const GOLD = '#b8860b';
+const END_BREATH_SEC = 1.6;
+const END_CARD_SEC = 6.0;
+const END_LINE_1 = 'Your testimony could help someone else find hope.';
+const END_LINE_2 = 'Share your story.';
 
 function xmlEsc(v) {
   return String(v)
@@ -142,6 +146,115 @@ async function renderStillFrame({ displayName, location }, outPath) {
   return outPath;
 }
 
+
+async function renderEndScreen(outPath) {
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${WIDTH}" height="${HEIGHT}">
+    <defs>
+      <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+        <stop offset="0%"   stop-color="${BG_STOP1}"/>
+        <stop offset="100%" stop-color="${BG_STOP2}"/>
+      </linearGradient>
+      <radialGradient id="glow" cx="50%" cy="45%" r="58%">
+        <stop offset="0%"   stop-color="${GOLD}" stop-opacity="0.14"/>
+        <stop offset="100%" stop-color="${GOLD}" stop-opacity="0"/>
+      </radialGradient>
+    </defs>
+    <rect width="100%" height="100%" fill="url(#bg)"/>
+    <rect width="100%" height="100%" fill="url(#glow)"/>
+    <text x="50%" y="242"
+          font-family="Cinzel, Georgia, serif"
+          font-size="26"
+          fill="${GOLD}"
+          text-anchor="middle"
+          letter-spacing="6">SHARED TESTIMONY</text>
+    <text x="50%" y="346"
+          font-family="Inter, Helvetica, sans-serif"
+          font-size="40"
+          font-weight="600"
+          fill="#ffffff"
+          text-anchor="middle">${xmlEsc(END_LINE_1)}</text>
+    <text x="50%" y="414"
+          font-family="Cinzel, Georgia, serif"
+          font-size="44"
+          font-weight="700"
+          fill="${GOLD}"
+          text-anchor="middle">${xmlEsc(END_LINE_2)}</text>
+  </svg>`;
+  await sharp(Buffer.from(svg)).png().toFile(outPath);
+  return outPath;
+}
+
+async function imageToSilentClip({ imagePath, durationSec, outPath }) {
+  await runFfmpeg([
+    '-y',
+    '-loop', '1',
+    '-framerate', '30',
+    '-i', imagePath,
+    '-f', 'lavfi',
+    '-i', 'anullsrc=channel_layout=stereo:sample_rate=44100',
+    '-t', String(durationSec),
+    '-c:v', 'libx264',
+    '-preset', 'medium',
+    '-crf', '21',
+    '-c:a', 'aac',
+    '-b:a', '128k',
+    '-ac', '2',
+    '-ar', '44100',
+    '-pix_fmt', 'yuv420p',
+    '-movflags', '+faststart',
+    outPath
+  ]);
+  return outPath;
+}
+
+async function extractLastFrame(videoPath, outPath) {
+  await runFfmpeg([
+    '-y',
+    '-sseof', '-0.10',
+    '-i', videoPath,
+    '-frames:v', '1',
+    '-update', '1',
+    outPath
+  ]);
+  return outPath;
+}
+
+async function appendEndScreen({ mainVideoPath, outPath }) {
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'jimk_endcard_'));
+  const lastFramePath = path.join(tmpDir, 'last-frame.png');
+  const holdClipPath = path.join(tmpDir, 'hold.mp4');
+  const endPngPath = path.join(tmpDir, 'end-card.png');
+  const endClipPath = path.join(tmpDir, 'end-card.mp4');
+  try {
+    await extractLastFrame(mainVideoPath, lastFramePath);
+    await imageToSilentClip({ imagePath: lastFramePath, durationSec: END_BREATH_SEC, outPath: holdClipPath });
+    await renderEndScreen(endPngPath);
+    await imageToSilentClip({ imagePath: endPngPath, durationSec: END_CARD_SEC, outPath: endClipPath });
+    await runFfmpeg([
+      '-y',
+      '-i', mainVideoPath,
+      '-i', holdClipPath,
+      '-i', endClipPath,
+      '-filter_complex', '[0:v][0:a][1:v][1:a][2:v][2:a]concat=n=3:v=1:a=1[v][a]',
+      '-map', '[v]',
+      '-map', '[a]',
+      '-c:v', 'libx264',
+      '-preset', 'medium',
+      '-crf', '21',
+      '-c:a', 'aac',
+      '-b:a', '192k',
+      '-ac', '2',
+      '-ar', '44100',
+      '-pix_fmt', 'yuv420p',
+      '-movflags', '+faststart',
+      outPath
+    ]);
+    return outPath;
+  } finally {
+    try { fs.rmSync(tmpDir, { recursive: true, force: true }); } catch (_) {}
+  }
+}
+
 /**
  * Convert an audio testimony to an MP4 with karaoke subtitles + piano bed.
  *
@@ -228,6 +341,7 @@ async function audioToTestimonyVideo({ audioPath, displayName, location, outPath
 
     const filterComplex = videoChain + ';' + audioChain;
 
+    const mainClipPath = path.join(tmpDir, 'main.mp4');
     const args = [
       '-y',
       '-loop', '1', '-framerate', '30', '-i', framePath,
@@ -251,10 +365,11 @@ async function audioToTestimonyVideo({ audioPath, displayName, location, outPath
       '-pix_fmt', 'yuv420p',
       '-shortest',
       '-movflags', '+faststart',
-      outPath
+      mainClipPath
     );
 
     await runFfmpeg(args);
+    await appendEndScreen({ mainVideoPath: mainClipPath, outPath });
 
     const durationSec = await probeDuration(outPath).catch(() => null);
     return { outPath, durationSec, hasSubtitles, hasMusicBed };
@@ -370,6 +485,7 @@ async function videoToTestimonyVideo({ videoPath, outPath, withSubtitles = true,
         `[voice][music]amix=inputs=2:duration=first:dropout_transition=0:normalize=0,loudnorm=I=-16:TP=-1.5:LRA=11[aout]`
       : `[0:a]aresample=44100,loudnorm=I=-16:TP=-1.5:LRA=11[aout]`;
 
+    const mainClipPath = path.join(tmpDir, 'main.mp4');
     const args = ['-y', '-i', videoPath];
     if (hasMusicBed) args.push('-stream_loop', '-1', '-i', PIANO_BED);
     args.push(
@@ -386,10 +502,11 @@ async function videoToTestimonyVideo({ videoPath, outPath, withSubtitles = true,
       '-pix_fmt', 'yuv420p',
       '-shortest',
       '-movflags', '+faststart',
-      outPath
+      mainClipPath
     );
 
     await runFfmpeg(args);
+    await appendEndScreen({ mainVideoPath: mainClipPath, outPath });
 
     const durationSec = await probeDuration(outPath).catch(() => null);
     return { outPath, durationSec, hasSubtitles, hasMusicBed };

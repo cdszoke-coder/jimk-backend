@@ -27,11 +27,26 @@ function fireMailFor(intakeRow) {
   // Best-effort: never block the HTTP response on email send
   setImmediate(() => {
     try { mail.sendAdminNewSubmission(intakeRow).catch(e => console.warn('[testimony-submit] admin mail failed:', e.message)); } catch (_) {}
+    try { fireAdminSMS(intakeRow); } catch (_) {}
     try { mail.sendThankYou(intakeRow).catch(e => console.warn('[testimony-submit] thank-you mail failed:', e.message)); } catch (_) {}
   });
 }
 
 const router = express.Router();
+
+// SMS alert for anything requiring admin action (submission or claim).
+let sms = null;
+try { sms = require('../services/smsService'); }
+catch (e) { console.warn('[testimony-submit] smsService not loaded:', e.message); }
+
+function fireAdminSMS(payload) {
+  if (!sms) return;
+  setImmediate(() => {
+    sms.sendAdminNewSubmissionSMS(payload)
+      .catch(e => console.warn('[testimony-submit] sms failed:', e.message));
+  });
+}
+
 
 function ensureDir(p) { try { fs.mkdirSync(p, { recursive: true }); } catch (_) {} }
 
@@ -424,6 +439,15 @@ router.post('/claim', express.json({ limit: '32kb' }), (req, res) => {
         } catch (_) {}
       });
     }
+
+    fireAdminSMS({
+      id: result.lastInsertRowid,
+      display_name,
+      location: null,
+      format: 'CLAIM',
+      discovery_source: 'qr',
+      qr_code: new_code
+    });
 
     return res.json({
       ok: true,

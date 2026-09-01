@@ -6,7 +6,14 @@
  * SMS alert to the admin when a new testimony is submitted.
  * Fire-and-forget: failures are logged, never thrown to the caller.
  *
- * MODE A — Twilio (recommended, most reliable):
+ * MODE A — ntfy push (free, instant lock-screen notification):
+ *   NTFY_TOPIC           a hard-to-guess topic name, e.g. jimk-admin-x9k27q
+ *                        (anyone who knows the topic can subscribe — treat it like a password)
+ *   NTFY_SERVER          default: https://ntfy.sh (or your self-hosted ntfy URL)
+ *   NTFY_PRIORITY        default: high (urgent bypasses Do Not Disturb on most phones)
+ *   Tap the notification -> opens the admin page (Click header).
+ *
+ * MODE B — Twilio (recommended, most reliable):
  *   TWILIO_ACCOUNT_SID   from console.twilio.com
  *   TWILIO_AUTH_TOKEN
  *   TWILIO_FROM          your Twilio number, e.g. +15551234567
@@ -35,6 +42,31 @@ function buildMessage(intake) {
   const link = `${ADMIN}#submission-${encodeURIComponent(intake.id || '')}`;
   // Keep it short — SMS gateways truncate long bodies.
   return `JIMK: New testimony from ${name} (${fmt}). Review: ${link}`;
+}
+
+async function sendViaNtfy(message, clickUrl) {
+  const topic = process.env.NTFY_TOPIC;
+  if (!topic) return { skipped: true, reason: 'NTFY_TOPIC unset' };
+  const server = (process.env.NTFY_SERVER || 'https://ntfy.sh').replace(/\/$/, '');
+  const priority = process.env.NTFY_PRIORITY || 'high';
+
+  const headers = {
+    'Title': 'JIMK — Action needed',
+    'Priority': priority,
+    'Tags': 'rotating_light'
+  };
+  if (clickUrl) headers['Click'] = clickUrl;
+
+  const res = await fetch(`${server}/${encodeURIComponent(topic)}`, {
+    method: 'POST',
+    headers,
+    body: message
+  });
+  if (!res.ok) {
+    const txt = await res.text().catch(() => '');
+    throw new Error(`ntfy HTTP ${res.status}: ${txt.slice(0, 300) || 'unknown'}`);
+  }
+  return { ok: true, via: 'ntfy' };
 }
 
 async function sendViaTwilio(message) {
@@ -85,17 +117,22 @@ async function sendViaGateway(message) {
 
 async function sendAdminNewSubmissionSMS(intake) {
   const message = buildMessage(intake);
+  const SITE2 = (process.env.PUBLIC_SITE_BASE_URL || 'https://www.jesusismykingmovement.com').replace(/\/$/, '');
+  const clickUrl = `${(process.env.ADMIN_DASHBOARD_URL || (SITE2 + '/admin.html')).replace(/\/$/, '')}#submission-${encodeURIComponent(intake.id || '')}`;
   try {
+    const nt = await sendViaNtfy(message, clickUrl);
+    if (nt.ok) { console.log('[smsService] ntfy push sent'); return nt; }
+
     const tw = await sendViaTwilio(message);
     if (tw.ok) { console.log('[smsService] Twilio SMS sent:', tw.sid); return tw; }
 
     const gw = await sendViaGateway(message);
     if (gw.ok) { console.log('[smsService] gateway SMS sent'); return gw; }
 
-    console.warn('[smsService] no SMS channel configured —', tw.reason, '/', gw.reason);
+    console.warn('[smsService] no alert channel configured —', nt.reason, '/', tw.reason, '/', gw.reason);
     return { skipped: true };
   } catch (err) {
-    console.error('[smsService] SMS send failed:', err.message);
+    console.error('[smsService] alert send failed:', err.message);
     return { ok: false, error: err.message };
   }
 }

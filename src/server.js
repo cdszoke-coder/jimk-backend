@@ -59,6 +59,7 @@ const testimonySubmitRoute    = safeRequireRouter('./routes/testimony-submit');
 const adminTestimonyRoute     = safeRequireRouter('./routes/admin-testimony');
 const adminYoutubeRoute       = safeRequireRouter('./routes/admin-youtube');
 const runClubRoute            = safeRequireRouter('./routes/run-club');
+const shortLinksRoute         = safeRequireRouter('./routes/shortLinks');
 
 const app = express();
 app.use(cors());
@@ -82,6 +83,11 @@ if (runClubRoute)               app.use('/api', runClubRoute);
 if (testimonySubmitRoute)       app.use('/api/public/testimony', testimonySubmitRoute);
 if (adminTestimonyRoute)        app.use('/api/admin/testimony-submissions', adminAuth, adminTestimonyRoute);
 if (adminYoutubeRoute)          app.use('/api/admin/youtube', adminYoutubeRoute);
+
+// Short QR links (/jimk-0007, /share/0007) — must come BEFORE express.static
+// and the 404 catch-all, or those swallow the short URLs first.
+if (shortLinksRoute)            app.use(shortLinksRoute);
+
 const uploadsDir = process.env.UPLOADS_DIR ||
   path.join((env && env.dataDir) || '/opt/render/project/src/data', 'uploads');
 try {

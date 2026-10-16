@@ -68,6 +68,8 @@ app.use(express.urlencoded({ extended: true }));
 app.use('/api', require('./routes/artists_youtube'));
 
 app.get('/healthz', (req, res) => res.json({ ok: true, service: 'jimk-2qr-backend' }));
+const artworkPiecesRoute = safeRequireRouter('./routes/artworkPieces');
+if (artworkPiecesRoute) app.use('/api', artworkPiecesRoute);
 
 if (corePublic)                 app.use('/api/public', corePublic);
 if (coreAdmin)                  app.use('/api/admin',  coreAdmin);

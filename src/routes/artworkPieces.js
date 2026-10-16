@@ -37,8 +37,81 @@ let env = {};
 try { env = require('../config/env') || {}; } catch (e) { env = {}; }
 
 const router = express.Router();
-const ARTISTS_TABLE = process.env.ARTISTS_TABLE || 'artists';
 const CODE_PREFIX = 'JIMK-ART-';
+
+// ---------------------------------------------------------------------------
+// The artists table name is DETECTED, not assumed. Set ARTISTS_TABLE (env var
+// on Render) to force a specific name; otherwise we find the table that has
+// both an `id` and a `slug` column plus the most artist-like columns.
+// ---------------------------------------------------------------------------
+let _artistTable;
+let _artistCols;
+
+function tableColumns(d, name) {
+  try { return d.prepare('PRAGMA table_info(' + name + ')').all().map(function (c) { return c.name; }); }
+  catch (e) { return []; }
+}
+
+function resolveArtistTable() {
+  if (_artistTable !== undefined) return _artistTable;
+  const forced = process.env.ARTISTS_TABLE || env.artistsTable || env.ARTISTS_TABLE;
+  if (forced) { _artistTable = forced; return forced; }
+
+  const d = getDb();
+  let names = [];
+  try { names = d.prepare("SELECT name FROM sqlite_master WHERE type='table'").all().map(function (r) { return r.name; }); }
+  catch (e) { names = []; }
+
+  let best = null, bestScore = 0;
+  names.forEach(function (n) {
+    const cols = tableColumns(d, n);
+    if (cols.indexOf('id') === -1 || cols.indexOf('slug') === -1) return;
+    let score = 0;
+    if (cols.indexOf('display_name') !== -1) score += 100;
+    if (cols.indexOf('portrait_image_url') !== -1) score += 20;
+    if (cols.indexOf('artwork_json') !== -1) score += 20;
+    if (cols.indexOf('bio') !== -1) score += 10;
+    if (cols.indexOf('hero_image_url') !== -1) score += 10;
+    if (/artist/i.test(n)) score += 50;
+    if (/code|artwork|piece|testimony/i.test(n)) score -= 200;
+    if (score > bestScore) { bestScore = score; best = n; }
+  });
+  _artistTable = best;
+  return best;
+}
+
+function resolveArtistCols() {
+  if (_artistCols) return _artistCols;
+  const t = resolveArtistTable();
+  const cols = t ? tableColumns(getDb(), t) : [];
+  _artistCols = {
+    id: cols.indexOf('id') !== -1,
+    slug: cols.indexOf('slug') !== -1,
+    display_name: cols.indexOf('display_name') !== -1,
+    status: cols.indexOf('status') !== -1
+  };
+  return _artistCols;
+}
+
+function fetchArtist(whereCol, value) {
+  const t = resolveArtistTable();
+  const cols = resolveArtistCols();
+  if (!t || !cols[whereCol]) return null;
+  const sel = ['id', 'slug'].filter(function (c) { return cols[c]; });
+  if (cols.display_name) sel.push('display_name');
+  if (cols.status) sel.push('status');
+  if (!sel.length) return null;
+  let row;
+  try { row = getDb().prepare('SELECT ' + sel.join(', ') + ' FROM ' + t + ' WHERE ' + whereCol + ' = ? LIMIT 1').get(value); }
+  catch (e) { console.error('[artworkPieces] artist lookup failed:', e.message); return null; }
+  if (!row) return null;
+  return {
+    id: row.id,
+    slug: row.slug,
+    display_name: row.display_name || '',
+    status: row.status == null ? 'active' : row.status   // no status column / NULL = visible
+  };
+}
 
 /* ------------------------------------------------------------------ schema */
 let ready = false;
@@ -108,12 +181,8 @@ function requireAdmin(req, res, next) {
   next();
 }
 
-function artistById(id) {
-  return db().prepare(`SELECT id, slug, display_name, status FROM ${ARTISTS_TABLE} WHERE id = ?`).get(id);
-}
-function artistBySlug(slug) {
-  return db().prepare(`SELECT id, slug, display_name, status FROM ${ARTISTS_TABLE} WHERE slug = ?`).get(slug);
-}
+function artistById(id) { return fetchArtist('id', id); }
+function artistBySlug(slug) { return fetchArtist('slug', slug); }
 
 function pieceOut(p) {
   if (!p) return null;
@@ -210,6 +279,21 @@ router.get('/public/artists/:slug/pieces', (req, res) => {
 });
 
 /* ================================================================= ADMIN */
+
+// Diagnostic: shows which table was detected. Safe (admin key required).
+router.get('/admin/art-debug', requireAdmin, (req, res) => {
+  const d = getDb();
+  let tables = [];
+  try { tables = d.prepare("SELECT name FROM sqlite_master WHERE type='table' ORDER BY name").all().map(function (r) { return r.name; }); }
+  catch (e) { /* ignore */ }
+  const detected = resolveArtistTable();
+  res.json({
+    detected_artists_table: detected || null,
+    columns: detected ? tableColumns(d, detected) : [],
+    all_tables: tables,
+    forced_by_env: !!(process.env.ARTISTS_TABLE || env.artistsTable || env.ARTISTS_TABLE)
+  });
+});
 
 router.get('/admin/art-pieces', requireAdmin, (req, res) => {
   const artistId = parseInt(req.query.artist_id, 10);

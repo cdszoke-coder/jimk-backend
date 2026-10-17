@@ -65,11 +65,25 @@ const app = express();
 app.use(cors());
 app.use(express.json({ limit: '1mb' }));
 app.use(express.urlencoded({ extended: true }));
+
+// Text/push alert to the owner whenever a testimony is submitted.
+// Must sit AFTER the body parsers and BEFORE the routes. Never blocks or
+// breaks a submission — see src/lib/notifyOwner.js and INSTALL-TEXT-ALERTS.txt.
+try {
+  app.use(require('./lib/notifyOwner').notifyOwnerMiddleware());
+} catch (e) {
+  console.warn('[server] owner alerts not loaded:', e.message);
+}
+
 app.use('/api', require('./routes/artists_youtube'));
 
 app.get('/healthz', (req, res) => res.json({ ok: true, service: 'jimk-2qr-backend' }));
 const artworkPiecesRoute = safeRequireRouter('./routes/artworkPieces');
 if (artworkPiecesRoute) app.use('/api', artworkPiecesRoute);
+
+// Private alert test: GET /api/admin/notify-test?key=NOTIFY_TEST_KEY
+const notifyTestRoute = safeRequireRouter('./routes/notifyTest');
+if (notifyTestRoute) app.use('/api', notifyTestRoute);
 
 if (corePublic)                 app.use('/api/public', corePublic);
 if (coreAdmin)                  app.use('/api/admin',  coreAdmin);

@@ -81,6 +81,11 @@ app.get('/healthz', (req, res) => res.json({ ok: true, service: 'jimk-2qr-backen
 const artworkPiecesRoute = safeRequireRouter('./routes/artworkPieces');
 if (artworkPiecesRoute) app.use('/api', artworkPiecesRoute);
 
+// Shirt linking (new shirt -> existing testimony) + admin code linking.
+// Mounted BEFORE the other /api/public routes so its /testimony/claim wins.
+const codeLinksRoute = safeRequireRouter('./routes/codeLinks');
+if (codeLinksRoute) app.use('/api', codeLinksRoute);
+
 // Private alert test: GET /api/admin/notify-test?key=NOTIFY_TEST_KEY
 const notifyTestRoute = safeRequireRouter('./routes/notifyTest');
 if (notifyTestRoute) app.use('/api', notifyTestRoute);

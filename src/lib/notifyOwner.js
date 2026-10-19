@@ -201,10 +201,10 @@ function formatAlert(p) {
   // Plain ASCII on purpose: one non-GSM character (like an em dash) makes a
   // Twilio SMS cost ~2x more segments.
   const lines = [];
-  lines.push('NEW TESTIMONY - ' + CFG.siteName);
+  lines.push((p.headline ? String(p.headline).slice(0, 40) : 'NEW TESTIMONY') + ' - ' + CFG.siteName);
   if (p.name || p.displayName) lines.push('From: ' + String(p.name || p.displayName).slice(0, 60));
   else lines.push('From: (no name given)');
-  if (p.kind) lines.push('Type: ' + String(p.kind).slice(0, 30));
+  if (p.kind) lines.push('Type: ' + String(p.kind).slice(0, p.headline ? 90 : 30));
   else if (p.format) lines.push('Type: ' + String(p.format).slice(0, 30));
   const code = p.code || p.shirtCode || p.itemCode;
   if (code) lines.push('Code: ' + String(code).slice(0, 40));

@@ -335,9 +335,15 @@ router.get('/admin/code-links/owners', adminAuth, (req, res) => {
   try {
     const s = schema(); if (!s.owners) return res.json({ ok: true, items: [] });
     const rows = getDb().prepare(`SELECT * FROM "${s.owners}" ORDER BY display_name COLLATE NOCASE`).all();
+    const fmtOf = (o) => o.format || (o.public_video_url || o.embed_video_url ? 'video' : o.audio_url ? 'audio' : o.photo_url ? 'photo' : o.written_body ? 'written' : '');
     res.json({ ok: true, can_hide: s.has(s.owners, 'status'), items: rows.map(o => ({
       id: o.id, slug: o.slug, display_name: o.display_name, location: o.location || '',
-      status: o.status || '', format: o.format || '', empty: isEmptyOwner(o), codes: codesForOwner(o.id),
+      status: o.status || 'active', format: fmtOf(o), empty: isEmptyOwner(o),
+      quote: String(o.short_quote || o.written_body || o.testimony_summary || '').slice(0, 140),
+      photo_url: o.photo_url || '',
+      video_id: ((String(o.embed_video_url || o.public_video_url || '').match(/(?:embed\/|v=|youtu\.be\/|shorts\/)([A-Za-z0-9_-]{6,})/) || [])[1] || ''),
+      date: o.approved_at || o.created_at || o.updated_at || '',
+      codes: codesForOwner(o.id),
     })) });
   } catch (e) { fail(res, e); }
 });
